@@ -189,13 +189,14 @@ def start_command_printer(
             if session and session.get("thread") and session["thread"].is_alive():
                 return
             stop_evt = threading.Event()
-            session = {"stop": stop_evt, "thread": None, "process": None}
+            stop_flag = threading.Event()  # flag to request stop from stop handler
+            session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None}
             game_sessions[serial] = session
 
         cmd = ["adb", "-s", serial] + shlex.split(command_text)
 
         def loop() -> None:
-            while not stop_evt.is_set():
+            while not stop_evt.is_set() and not session["stop_flag"].is_set():
                 proc = None
                 try:
                     proc = subprocess.Popen(
@@ -213,7 +214,7 @@ def start_command_printer(
                 finally:
                     with game_sessions_lock:
                         session["process"] = None
-                if stop_evt.is_set():
+                if stop_evt.is_set() or session["stop_flag"].is_set():
                     break
                 stop_evt.wait(1)
 
@@ -228,19 +229,37 @@ def start_command_printer(
             stop_evt = session.get("stop")
             if stop_evt:
                 stop_evt.set()
+            stop_flag = session.get("stop_flag")
+            if stop_flag:
+                stop_flag.set()
+
+            # First attempt: stop thread cleanly
+            thread = session.get("thread")
+            if thread:
+                thread.join(timeout=2)
+
             proc = session.get("process")
             if proc and proc.poll() is None:
                 try:
                     proc.terminate()
-                    proc.wait(timeout=5)
+                    proc.wait(timeout=2)
                 except Exception:
+                    pass
+                if proc.poll() is None:
                     try:
                         proc.kill()
+                        proc.wait(timeout=2)
                     except Exception:
                         pass
+                
+
+            # Final attempt: join thread again after process kill
+            if thread:
+                thread.join(timeout=2)
+
             thread = session.get("thread")
             if thread:
-                thread.join(timeout=5)
+                thread.join(timeout=1)
             with game_sessions_lock:
                 game_sessions.pop(serial, None)
 
