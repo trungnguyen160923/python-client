@@ -1,2 +1,12 @@
 /build/
-main.spec
+/dist/
+/.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.spec
+.Python
+.pytest_cache/
+.vscode/
+.idea/

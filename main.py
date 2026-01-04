@@ -97,26 +97,59 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
     }
 
 
+def list_adb_devices() -> List[Dict[str, object]]:
+    """Return list of connected adb devices as payload items for report-devices."""
+    try:
+        proc = subprocess.Popen(
+            ["adb", "devices"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        out, err = proc.communicate(timeout=5)
+        if proc.returncode != 0:
+            return []
+    except Exception:
+        return []
+
+    lines = (out or "").splitlines()
+    devices: List[Dict[str, object]] = []
+    # First line is usually "List of devices attached"
+    for line in lines[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        # Format: <serial>\t<state>
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        serial, state = parts[0], parts[1]
+        status = "active" if state == "device" else state
+        devices.append(
+            {
+                "serial": serial,
+                "data": {},
+                "status": status,
+                "device_type": "android",
+            }
+        )
+    return devices
+
+
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC) -> None:
     """
     Background thread that reports devices every `interval` seconds.
     """
     url = "http://160.25.81.154:9000/api/v1/report-devices"
-    payload = {
-        "room_hash": room_hash_value,
-        "devices": [
-            {
-                "serial": "abc",
-                "data": {},
-                "status": "active",
-                "device_type": "android",
-            }
-        ],
-    }
 
     def report_loop() -> None:
         while not stop_signal.is_set():
             try:
+                devices = list_adb_devices()
+                payload = {
+                    "room_hash": room_hash_value,
+                    "devices": devices,
+                }
                 requests.post(url, json=payload, timeout=5)
             except Exception as exc:
                 print(f"[report err] {exc}")
