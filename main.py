@@ -140,23 +140,14 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    # url = "http://160.25.81.154:9000/api/v1/report-devices"
-    url = "http://localhost:9000/api/v1/report-devices"
+    url = "http://160.25.81.154:9000/api/v1/report-devices"
+    # url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
             try:
                 devices = list_adb_devices()
-                # Log danh sách thiết bị và trạng thái trước khi gửi lên server
-                try:
-                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                    summary = [
-                        f"{d.get('serial')}={d.get('status')}" for d in devices
-                    ]
-                    print(f"[report] {timestamp} room={room_hash_value} count={len(devices)} -> " + ", ".join(summary))
-                except Exception:
-                    # Không để việc log làm hỏng luồng report chính
-                    pass
+                # Đã xoá log danh sách thiết bị kết nối
 
                 payload = {
                     "room_hash": room_hash_value,
@@ -180,7 +171,7 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -415,7 +406,7 @@ def start_command_printer(
     ) -> None:
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
-            url = "http://localhost:9000/api/v1/report-result"
+            url = "http://160.25.81.154:9000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
@@ -476,7 +467,11 @@ def start_command_printer(
                 command_id = cmd.get("command_id")
                 if not serial or not text:
                     continue
-                if "nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text:
+                if (
+                    "nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text
+                    and "runPlayGame" in text
+                ):
+                    print(f"[CLASSIFY] Start Game: serial={serial} cmd={text}")
                     start_batch.append(
                         {
                             "serial": serial,
@@ -486,6 +481,7 @@ def start_command_printer(
                         }
                     )
                 elif "force-stop nat.myc.test" in text:
+                    print(f"[CLASSIFY] Stop Game: serial={serial} cmd={text}")
                     stop_batch.append(
                         {
                             "serial": serial,
@@ -495,6 +491,7 @@ def start_command_printer(
                         }
                     )
                 else:
+                    print(f"[CLASSIFY] Regular Command: serial={serial} cmd={text}")
                     regular_batch.append(
                         {
                             "serial": serial,
