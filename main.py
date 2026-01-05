@@ -140,8 +140,8 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    url = "http://160.25.81.154:9000/api/v1/report-devices"
-    # url = "http://localhost:9000/api/v1/report-devices"
+    # url = "http://160.25.81.154:9000/api/v1/report-devices"
+    url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
@@ -171,7 +171,7 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -406,7 +406,7 @@ def start_command_printer(
     ) -> None:
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
-            url = "http://160.25.81.154:9000/api/v1/report-result"
+            url = "http://localhost:9000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
@@ -439,6 +439,19 @@ def start_command_printer(
         results_lock: threading.Lock,
     ) -> None:
         result = run_adb_sequence(serial, command_text)
+        # Kiểm tra lỗi instrument đặc biệt
+        stdout = str(result.get("stdout", ""))
+        stderr = str(result.get("stderr", ""))
+        instrument_fail_patterns = [
+            "ClassNotFoundException",
+            "initializationError",
+            "FAILURES!!!",
+            "Tests run:",
+            "Failed loading specified test class",
+        ]
+        is_instrument_fail = any(pat in stdout or pat in stderr for pat in instrument_fail_patterns)
+        if is_instrument_fail:
+            result["code"] = 1
         with results_lock:
             result_copy: Dict[str, object] = dict(result)
             result_copy["room_hash"] = room_hash

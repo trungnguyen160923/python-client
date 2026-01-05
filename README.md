@@ -62,7 +62,7 @@ pip install pyinstaller
 
 ```powershell
 cd D:\CODE\Du_An_Tool_Ads\python-client
-build.cmd
+./build.cmd
 ```
 
 Script `build.cmd` sẽ tạo file:

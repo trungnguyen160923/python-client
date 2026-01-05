@@ -192,3 +192,4 @@ java.lang.IllegalArgumentException: Argument expected after "text"
 2026-01-05 18:10:54   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
 2026-01-05 18:10:56   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
 2026-01-05 18:10:58   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-06 03:10:58   ZDPN457HG67DIFN7   :   adb.exe: unknown command screencap
