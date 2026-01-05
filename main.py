@@ -140,8 +140,8 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    # url = "http://160.25.81.154:9000/api/v1/report-devices"
-    url = "http://localhost:9000/api/v1/report-devices"
+    url = "http://160.25.81.154:9000/api/v1/report-devices"
+    # url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
@@ -171,7 +171,7 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -406,7 +406,7 @@ def start_command_printer(
     ) -> None:
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
-            url = "http://localhost:9000/api/v1/report-result"
+            url = "http://160.25.81.154:9000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
