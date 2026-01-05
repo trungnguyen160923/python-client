@@ -1,0 +1,194 @@
+2026-01-04 23:33:16   abc   :   adb.exe: device 'abc' not found
+2026-01-04 23:34:04   abc 2   :   adb.exe: device 'abc 2' not found
+2026-01-04 23:35:09   abc   :   adb.exe: device 'abc' not found
+2026-01-04 23:59:31   abc 2222   :   adb.exe: device 'abc 2222' not found
+2026-01-05 00:02:30   abc   :   adb.exe: device 'abc' not found
+2026-01-05 15:27:10   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:29:50   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:30:14   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:30:39   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:30:42   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:31:09   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 15:53:22   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 16:11:59   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 16:16:16   ZDPN457HG67DIFN7   :   adb.exe: device 'ZDPN457HG67DIFN7' not found
+2026-01-05 16:16:16   RS4HU8XW4HY9FE4X   :   Exception occurred while executing 'text':
+java.lang.IllegalArgumentException: Argument expected after "text"
+	at com.android.modules.utils.BasicShellCommandHandler.getNextArgRequired(BasicShellCommandHandler.java:295)
+	at com.android.server.input.InputShellCommand.runText(InputShellCommand.java:247)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:188)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3553)
+	at android.os.Binder.shellCommand(Binder.java:956)
+	at android.os.Binder.onTransact(Binder.java:840)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1144)
+	at android.os.Binder.execTransactInternal(Binder.java:1190)
+	at android.os.Binder.execTransact(Binder.java:1149)
+2026-01-05 16:32:15   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 16:32:25   RS4HU8XW4HY9FE4X   :   Unknown command: rẻwr
+2026-01-05 16:32:53   RS4HU8XW4HY9FE4X   :   Unknown command: 123344435535
+2026-01-05 16:41:59   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 16:42:42   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 16:59:02   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 16:59:33   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:03:25   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:06:24   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:06:44   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:17:36   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:21:35   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:22:12   ZDPN457HG67DIFN7   :   adb.exe: device 'ZDPN457HG67DIFN7' not found
+2026-01-05 17:22:14   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:38:13   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:38:15   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:39:49   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:39:51   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:40:06   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:40:08   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:44:02   ce01160184cf891b02   :   adb.exe: device 'ce01160184cf891b02' not found
+2026-01-05 17:44:04   ce021602335bdc0d02   :   adb.exe: device 'ce021602335bdc0d02' not found
+2026-01-05 17:44:06   ce0117110af9713a05   :   adb.exe: device 'ce0117110af9713a05' not found
+2026-01-05 17:44:08   ce02160265ac7d2004   :   adb.exe: device 'ce02160265ac7d2004' not found
+2026-01-05 17:44:10   ce01171119989a1702   :   adb.exe: device 'ce01171119989a1702' not found
+2026-01-05 17:44:12   ce02171272041ce70c   :   adb.exe: device 'ce02171272041ce70c' not found
+2026-01-05 17:44:14   ce011601ca2b952604   :   adb.exe: device 'ce011601ca2b952604' not found
+2026-01-05 17:44:16   ce0416041879102602   :   adb.exe: device 'ce0416041879102602' not found
+2026-01-05 17:44:18   ce041604d518202e01   :   adb.exe: device 'ce041604d518202e01' not found
+2026-01-05 17:44:20   ce021602750c553d02   :   adb.exe: device 'ce021602750c553d02' not found
+2026-01-05 17:44:22   ce11160b34a0863604   :   adb.exe: device 'ce11160b34a0863604' not found
+2026-01-05 17:44:25   ce041604a5a93f0c04   :   adb.exe: device 'ce041604a5a93f0c04' not found
+2026-01-05 17:44:27   ce031603b3d7600503   :   adb.exe: device 'ce031603b3d7600503' not found
+2026-01-05 17:44:29   ce10160a8113a41e05   :   adb.exe: device 'ce10160a8113a41e05' not found
+2026-01-05 17:44:31   ce0216024b0d102305   :   adb.exe: device 'ce0216024b0d102305' not found
+2026-01-05 17:44:33   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:44:35   ce091609d0e07c3c05   :   adb.exe: device 'ce091609d0e07c3c05' not found
+2026-01-05 17:44:37   ce0616062d672a0303   :   adb.exe: device 'ce0616062d672a0303' not found
+2026-01-05 17:44:39   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:44:41   ce11160b19aab50804   :   adb.exe: device 'ce11160b19aab50804' not found
+2026-01-05 17:44:43   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:44:45   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:45:49   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:45:51   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:45:53   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:45:55   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:50:10   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:50:12   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:50:14   RS4HU8XW4HY9FE4X   :   exit_code=-1
+2026-01-05 17:50:16   ZDPN457HG67DIFN7   :   exit_code=-1
+2026-01-05 17:54:37   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 17:54:39   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:54:41   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:55:52   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:55:54   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:55:56   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 17:56:59   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:57:01   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 17:57:03   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:57:25   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 17:57:27   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:57:29   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 17:57:53   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 17:57:55   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 17:57:57   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 18:10:14   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-05 18:10:16   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 18:10:19   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 18:10:54   ce12160cbb86050405   :   adb.exe: device 'ce12160cbb86050405' not found
+2026-01-05 18:10:56   ce12160c0aac783c04   :   adb.exe: device 'ce12160c0aac783c04' not found
+2026-01-05 18:10:58   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found

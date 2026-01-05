@@ -4,7 +4,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import requests
 
@@ -140,12 +140,24 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    url = "http://160.25.81.154:9000/api/v1/report-devices"
+    # url = "http://160.25.81.154:9000/api/v1/report-devices"
+    url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
             try:
                 devices = list_adb_devices()
+                # Log danh sách thiết bị và trạng thái trước khi gửi lên server
+                try:
+                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                    summary = [
+                        f"{d.get('serial')}={d.get('status')}" for d in devices
+                    ]
+                    print(f"[report] {timestamp} room={room_hash_value} count={len(devices)} -> " + ", ".join(summary))
+                except Exception:
+                    # Không để việc log làm hỏng luồng report chính
+                    pass
+
                 payload = {
                     "room_hash": room_hash_value,
                     "devices": devices,
@@ -160,7 +172,7 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
 
 def start_command_fetcher(
     room_hash_value: str,
-    commands: List[Dict[str, str]],
+    commands: List[Dict[str, object]],
     commands_lock: threading.Lock,
     stop_signal: threading.Event,
     interval: float = FETCH_INTERVAL_SEC,
@@ -168,7 +180,7 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -177,15 +189,37 @@ def start_command_fetcher(
                 if resp.status_code == 200:
                     data = resp.json()
                     cmd_items = data.get("commands") or []
-                    simplified = [
-                        {
-                            "command_text": item.get("command_text", ""),
-                            "serial": item.get("serial", ""),
-                        }
-                        for item in cmd_items
-                        if item.get("command_text") and item.get("serial")
-                    ]
+                    simplified: List[Dict[str, object]] = []
+                    for item in cmd_items:
+                        command_text = item.get("command_text", "")
+                        serial = item.get("serial", "")
+                        if not command_text or not serial:
+                            continue
+
+                        # Lấy room_hash và command_id từ response (hoặc meta.command_id nếu cần)
+                        room_hash = item.get("room_hash", room_hash_value)
+                        command_id = item.get("command_id")
+                        meta = item.get("meta") or {}
+                        if not command_id:
+                            command_id = meta.get("command_id")
+
+                        simplified.append(
+                            {
+                                "command_text": command_text,
+                                "serial": serial,
+                                "room_hash": room_hash,
+                                "command_id": command_id,
+                            }
+                        )
                     if simplified:
+                        print(
+                            "[fetch] room=",
+                            room_hash_value,
+                            " commands=",
+                            len(simplified),
+                            " serials=",
+                            [d.get("serial") for d in simplified],
+                        )
                         with commands_lock:
                             if commands:
                                 # still pending; skip adding new commands until queue is empty
@@ -202,7 +236,7 @@ def start_command_fetcher(
 
 
 def start_command_printer(
-    commands: List[Dict[str, str]],
+    commands: List[Dict[str, object]],
     commands_lock: threading.Lock,
     stop_signal: threading.Event,
     game_sessions: Dict[str, Dict[str, object]],
@@ -216,7 +250,12 @@ def start_command_printer(
     - Other commands run once with summary + error logging.
     """
 
-    def handle_start_game(serial: str, command_text: str) -> None:
+    def handle_start_game(
+        serial: str,
+        command_text: str,
+        room_hash: str,
+        command_id: Optional[int],
+    ) -> None:
         with game_sessions_lock:
             session = game_sessions.get(serial)
             if session and session.get("thread") and session["thread"].is_alive():
@@ -255,7 +294,46 @@ def start_command_printer(
         session["thread"] = thread
         thread.start()
 
-    def handle_stop_game(serial: str, command_text: str) -> None:
+        # Sau khi start, chạy thêm bước verify xem game đã thực sự chạy chưa
+        def verify_start() -> None:
+            # Mặc định dùng package nat.myc.test giống pattern phân loại ở dưới
+            package_name = "nat.myc.test"
+            time.sleep(5)
+            check_cmd = f"shell pidof {package_name}"
+            res = run_adb_once(serial, check_cmd)
+            # Giữ nguyên exit code thực từ adb; chỉ fallback -1 nếu không có
+            code = res.get("code", -1)
+            stdout = str(res.get("stdout", ""))
+            stderr = str(res.get("stderr", ""))
+            # Thành công thực sự: có pid (stdout không rỗng) và exit code = 0
+            if code == 0 and stdout.strip():
+                report_command_result(
+                    room_hash=room_hash,
+                    serial=serial,
+                    command_id=command_id,
+                    code=0,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
+            else:
+                # Nếu không tìm thấy process thì coi là fail nghiệp vụ
+                report_command_result(
+                    room_hash=room_hash,
+                    serial=serial,
+                    command_id=command_id,
+                    code=1,
+                    stdout=stdout,
+                    stderr=stderr or "Game process not found after start command",
+                )
+
+        threading.Thread(target=verify_start, daemon=True).start()
+
+    def handle_stop_game(
+        serial: str,
+        command_text: str,
+        room_hash: str,
+        command_id: Optional[int],
+    ) -> None:
         with game_sessions_lock:
             session = game_sessions.get(serial)
         if session:
@@ -294,23 +372,91 @@ def start_command_printer(
             if thread:
                 thread.join(timeout=1)
             with game_sessions_lock:
-                game_sessions.pop(serial, None)
+                    game_sessions.pop(serial, None)
 
-        result = run_adb_once(serial, command_text)
+            # Thực thi lệnh stop chính
+            _ = run_adb_once(serial, command_text)
+
+            # Verify: game đã thật sự dừng chưa (không còn process)
+            package_name = "nat.myc.test"
+            check_cmd = f"shell pidof {package_name}"
+            res = run_adb_once(serial, check_cmd)
+            # Giữ nguyên exit code thực từ adb; chỉ fallback -1 nếu không có
+            code = res.get("code", -1)
+            stdout = str(res.get("stdout", ""))
+            stderr = str(res.get("stderr", ""))
+            # Thành công nghiệp vụ: không còn pid => stdout rỗng hoặc exit code != 0
+            if (code != 0) or (not stdout.strip()):
+                report_command_result(
+                    room_hash=room_hash,
+                    serial=serial,
+                    command_id=command_id,
+                    code=0,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
+            else:
+                report_command_result(
+                    room_hash=room_hash,
+                    serial=serial,
+                    command_id=command_id,
+                    code=1,
+                    stdout=stdout,
+                    stderr=stderr or "Game process still running after stop command",
+                )
+
+    def report_command_result(
+        room_hash: str,
+        serial: str,
+        command_id: Optional[int],
+        code: int,
+        stdout: str,
+        stderr: str,
+    ) -> None:
+        """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
+        try:
+            url = "http://localhost:9000/api/v1/report-result"
+            success = code == 0
+            output = stderr or stdout or f"exit_code={code}"
+            payload = {
+                "room_hash": room_hash,
+                "serial": serial,
+                "command_id": int(command_id) if command_id is not None else 0,
+                "success": success,
+                "output": output[:4000],
+            }
+            print(
+                "[report-result] room=",
+                room_hash,
+                " serial=",
+                serial,
+                " command_id=",
+                payload["command_id"],
+                " success=",
+                payload["success"],
+            )
+            requests.post(url, json=payload, timeout=5)
+        except Exception as exc:
+            print(f"[report-result err] {serial}: {exc}")
 
     def run_regular_command(
         serial: str,
         command_text: str,
-        results: List[Dict[str, str]],
+        room_hash: str,
+        command_id: Optional[int],
+        results: List[Dict[str, object]],
         results_lock: threading.Lock,
     ) -> None:
         result = run_adb_sequence(serial, command_text)
         with results_lock:
-            results.append(result)
+            result_copy: Dict[str, object] = dict(result)
+            result_copy["room_hash"] = room_hash
+            result_copy["command_id"] = command_id
+            results.append(result_copy)
 
     def print_loop() -> None:
         while not stop_signal.is_set():
-            batch: List[Dict[str, str]] = []
+            batch: List[Dict[str, object]] = []
             with commands_lock:
                 if commands:
                     batch = commands[:]
@@ -319,36 +465,78 @@ def start_command_printer(
                 stop_signal.wait(interval)
                 continue
 
-            start_batch: List[Dict[str, str]] = []
-            stop_batch: List[Dict[str, str]] = []
-            regular_batch: List[Dict[str, str]] = []
+            start_batch: List[Dict[str, object]] = []
+            stop_batch: List[Dict[str, object]] = []
+            regular_batch: List[Dict[str, object]] = []
 
             for cmd in batch:
-                serial = cmd.get("serial", "")
-                text = cmd.get("command_text", "")
+                serial = str(cmd.get("serial", ""))
+                text = str(cmd.get("command_text", ""))
+                room_hash = str(cmd.get("room_hash", ""))
+                command_id = cmd.get("command_id")
                 if not serial or not text:
                     continue
                 if "nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text:
-                    start_batch.append({"serial": serial, "command_text": text})
+                    start_batch.append(
+                        {
+                            "serial": serial,
+                            "command_text": text,
+                            "room_hash": room_hash,
+                            "command_id": command_id,
+                        }
+                    )
                 elif "force-stop nat.myc.test" in text:
-                    stop_batch.append({"serial": serial, "command_text": text})
+                    stop_batch.append(
+                        {
+                            "serial": serial,
+                            "command_text": text,
+                            "room_hash": room_hash,
+                            "command_id": command_id,
+                        }
+                    )
                 else:
-                    regular_batch.append({"serial": serial, "command_text": text})
+                    regular_batch.append(
+                        {
+                            "serial": serial,
+                            "command_text": text,
+                            "room_hash": room_hash,
+                            "command_id": command_id,
+                        }
+                    )
 
             for item in start_batch:
-                handle_start_game(item["serial"], item["command_text"])
+                handle_start_game(
+                    serial=item["serial"],
+                    command_text=item["command_text"],
+                    room_hash=str(item.get("room_hash", "")),
+                    command_id=item.get("command_id"),
+                )
 
             for item in stop_batch:
-                handle_stop_game(item["serial"], item["command_text"])
+                handle_stop_game(
+                    serial=item["serial"],
+                    command_text=item["command_text"],
+                    room_hash=str(item.get("room_hash", "")),
+                    command_id=item.get("command_id"),
+                )
 
             if regular_batch:
                 workers: List[threading.Thread] = []
-                results: List[Dict[str, str]] = []
+                results: List[Dict[str, object]] = []
                 results_lock = threading.Lock()
                 for item in regular_batch:
+                    room_hash = str(item.get("room_hash", ""))
+                    command_id = item.get("command_id")
                     worker = threading.Thread(
                         target=run_regular_command,
-                        args=(item["serial"], item["command_text"], results, results_lock),
+                        args=(
+                            str(item["serial"]),
+                            str(item["command_text"]),
+                            room_hash,
+                            command_id,
+                            results,
+                            results_lock,
+                        ),
                     )
                     workers.append(worker)
                     worker.start()
@@ -361,9 +549,32 @@ def start_command_printer(
                 fail_count = len(fail_results)
                 timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
                 print(f"[SUMARY] {timestamp} : success={success_count} fail={fail_count}")
-                for r in fail_results:
-                    error_text = r.get("stderr") or r.get("stdout") or f"exit_code={r.get('code')}"
-                    append_error_log(r.get("serial", ""), error_text)
+                # Ghi log lỗi cục bộ và report kết quả lên server cho tất cả results
+                for r in results:
+                    serial = str(r.get("serial", ""))
+                    # Không được dùng "or -1" vì 0 là success nhưng là giá trị falsy trong Python
+                    try:
+                        code = int(r.get("code", -1))
+                    except (TypeError, ValueError):
+                        code = -1
+                    stdout = str(r.get("stdout", ""))
+                    stderr = str(r.get("stderr", ""))
+                    room_hash = str(r.get("room_hash", ""))
+                    command_id = r.get("command_id")
+
+                    if code != 0:
+                        error_text = stderr or stdout or f"exit_code={code}"
+                        append_error_log(serial, error_text)
+
+                    if room_hash:
+                        report_command_result(
+                            room_hash=room_hash,
+                            serial=serial,
+                            command_id=command_id if isinstance(command_id, int) else None,
+                            code=code,
+                            stdout=stdout,
+                            stderr=stderr,
+                        )
 
             with commands_lock:
                 commands.clear()
@@ -421,7 +632,7 @@ def main() -> None:
     room_hash = load_room_hash()
     print(f"Room hash: {room_hash}")
 
-    commands: List[Dict[str, str]] = []
+    commands: List[Dict[str, object]] = []
     commands_lock = threading.Lock()
     stop_event = threading.Event()
     game_sessions: Dict[str, Dict[str, object]] = {}
