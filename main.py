@@ -42,6 +42,24 @@ def append_error_log(serial: str, message: str) -> None:
         pass
 
 
+def download_temp_file(url: str) -> Optional[str]:
+    """Tải file từ URL về thư mục temp và trả về đường dẫn file."""
+    try:
+        filename = url.split("/")[-1] or "temp_file"
+        # Lưu vào thư mục hiện tại để dễ debug
+        local_path = Path(__file__).with_name(filename)
+        
+        print(f"[download] Downloading {url} -> {local_path}")
+        with requests.get(url, stream=True, timeout=30) as r:
+            r.raise_for_status()
+            with open(local_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        return str(local_path)
+    except Exception as e:
+        print(f"[download err] {e}")
+        return None
+
 def run_adb_once(serial: str, command_text: str) -> Dict[str, object]:
     cmd = ["adb", "-s", serial] + shlex.split(command_text)
     code = -1
@@ -71,6 +89,30 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
     Execute semicolon-separated commands sequentially for the given serial.
     Stops on first failure and returns aggregated output.
     """
+    # --- XỬ LÝ LỆNH ĐẶC BIỆT: net-push ---
+    # Cú pháp: net-push <URL> <DESTINATION_PATH>
+    if command_text.strip().startswith("net-push"):
+        parts = shlex.split(command_text)
+        if len(parts) >= 3:
+            url = parts[1]
+            dest = parts[2]
+            local_file = download_temp_file(url)
+            
+            if local_file:
+                # Chuyển đổi thành lệnh adb push thông thường
+                # Thêm dấu nháy đơn để shlex xử lý đúng đường dẫn Windows (tránh lỗi mất dấu \)
+                push_cmd = f"push '{local_file}' '{dest}'"
+                result = run_adb_once(serial, push_cmd)
+                
+                # (Tùy chọn) Xóa file sau khi push xong để tiết kiệm ổ cứng
+                # try:
+                #     os.remove(local_file)
+                # except: pass
+                
+                return result
+            else:
+                return {"serial": serial, "code": 1, "stdout": "", "stderr": "Failed to download file from URL"}
+
     steps = [step.strip() for step in command_text.split(";") if step.strip()]
     if not steps:
         return run_adb_once(serial, command_text)
@@ -140,8 +182,8 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    # url = "http://160.25.81.154:9000/api/v1/report-devices"
-    url = "http://localhost:9000/api/v1/report-devices"
+    url = "http://160.25.81.154:9000/api/v1/report-devices"
+    # url = "http://localhost:8000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
@@ -180,7 +222,8 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
+    # url = f"http://localhost:8000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -415,7 +458,7 @@ def start_command_printer(
     ) -> None:
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
-            url = "http://localhost:9000/api/v1/report-result"
+            url = "http://localhost:8000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
