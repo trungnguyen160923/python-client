@@ -1,4 +1,5 @@
 import os
+import sys
 import shlex
 import subprocess
 import threading
@@ -46,8 +47,12 @@ def download_temp_file(url: str) -> Optional[str]:
     """Tải file từ URL về thư mục temp và trả về đường dẫn file."""
     try:
         filename = url.split("/")[-1] or "temp_file"
-        # Lưu vào thư mục hiện tại để dễ debug
-        local_path = Path(__file__).with_name(filename)
+        
+        # Nếu đang chạy file .exe (frozen) thì lưu cạnh file .exe
+        if getattr(sys, 'frozen', False):
+            local_path = Path(sys.executable).with_name(filename)
+        else:
+            local_path = Path(__file__).with_name(filename)
         
         print(f"[download] Downloading {url} -> {local_path}")
         with requests.get(url, stream=True, timeout=30) as r:
@@ -195,7 +200,7 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
                     summary = [
                         f"{d.get('serial')}={d.get('status')}" for d in devices
                     ]
-                    print(f"[report] {timestamp} room={room_hash_value} count={len(devices)} -> " + ", ".join(summary))
+                    # print(f"[report] {timestamp} room={room_hash_value} count={len(devices)} -> " + ", ".join(summary))
                 except Exception:
                     # Không để việc log làm hỏng luồng report chính
                     pass
@@ -468,16 +473,16 @@ def start_command_printer(
                 "success": success,
                 "output": output[:4000],
             }
-            print(
-                "[report-result] room=",
-                room_hash,
-                " serial=",
-                serial,
-                " command_id=",
-                payload["command_id"],
-                " success=",
-                payload["success"],
-            )
+            # print(
+            #     "[report-result] room=",
+            #     room_hash,
+            #     " serial=",
+            #     serial,
+            #     " command_id=",
+            #     payload["command_id"],
+            #     " success=",
+            #     payload["success"],
+            # )
             requests.post(url, json=payload, timeout=5)
         except Exception as exc:
             print(f"[report-result err] {serial}: {exc}")
