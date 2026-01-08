@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
+import json
 
 import requests
 
@@ -94,6 +95,164 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
     Execute semicolon-separated commands sequentially for the given serial.
     Stops on first failure and returns aggregated output.
     """
+# --- HÀM PHỤ TRỢ: Lấy danh sách package name (Tận dụng run_adb_once) ---
+    def get_installed_packages(target_serial: str) -> set:
+        res = run_adb_once(target_serial, "shell pm list packages")
+        if res.get("code") != 0:
+            return set()
+        
+        out = res.get("stdout", "")
+        packages = set()
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("package:"):
+                packages.add(line.replace("package:", ""))
+        return packages
+
+    # =========================================================================
+    # 1. XỬ LÝ LỆNH: net-install (Hỗ trợ nhiều URL + Rollback)
+    # Cú pháp: net-install <URL_1> <URL_2> ...
+    # =========================================================================
+    if command_text.strip().startswith("net-install"):
+        parts = shlex.split(command_text)
+        # parts[0] là "net-install", từ parts[1] trở đi là các URL
+        urls = parts[1:]
+        
+        if not urls:
+            return {"serial": serial, "code": 1, "stdout": "", "stderr": "No URLs provided"}
+
+        downloaded_files = []        # File APK tạm để xóa sau khi xong
+        downloaded_files = []        # File APK tạm, không xóa ngay
+        # Sử dụng bộ đếm tham chiếu cho mỗi file APK
+        apk_ref_counter = {}
+        installed_packages_list = [] # Các gói ĐÃ CÀI THÀNH CÔNG (để rollback nếu lỗi)
+        install_logs = []
+        final_code = 0
+
+        try:
+            for i, url in enumerate(urls):
+                step_num = i + 1
+                
+                # A. Tải file
+                local_file = download_temp_file(url)
+                if not local_file:
+                    install_logs.append(f"File {step_num}: Download failed ({url})")
+                    final_code = 1
+                    break 
+                
+                # B. Đổi tên .apk (ADB bắt buộc phải có đuôi .apk)
+                if not local_file.lower().endswith(".apk"):
+                    new_path = local_file + f"_{i}.apk"
+                    try:
+                        os.rename(local_file, new_path)
+                        local_file = new_path
+                    except OSError: pass
+                
+                downloaded_files.append(local_file)
+                    # Tăng bộ đếm tham chiếu cho file này
+                apk_ref_counter[local_file] = apk_ref_counter.get(local_file, 0) + 1
+
+                # C. [SNAPSHOT 1] Lấy danh sách gói trước khi cài
+                packages_before = get_installed_packages(serial)
+
+                # D. Cài đặt (-r: reinstall/update, -t: test, -g: grant permissions)
+                print(f"[install] Installing {step_num}/{len(urls)}: {local_file}")
+                # install_cmd = f"install -r -t -g '{local_file}'"
+                install_cmd = f"install -r -t '{local_file}'"
+                result = run_adb_once(serial, install_cmd)
+                
+                stdout = result.get("stdout", "").strip()
+                stderr = result.get("stderr", "").strip()
+                combined_output = f"{stdout} {stderr}"
+
+                if "Success" in combined_output:
+                    print(f"[install] File {step_num} SUCCESS.")
+                    install_logs.append(f"File {step_num}: Success ({os.path.basename(url)})")
+                    
+                    # E. [SNAPSHOT 2] So sánh để tìm gói mới
+                    packages_after = get_installed_packages(serial)
+                    new_packages = packages_after - packages_before
+                    
+                    if new_packages:
+                        # Lấy gói mới nhất vừa xuất hiện
+                        pkg_name = list(new_packages)[0]
+                        installed_packages_list.append(pkg_name)
+                        print(f"   -> Detected new package: {pkg_name}")
+                    else:
+                        print("   -> No new package detected (Likely updated existing app)")
+                else:
+                    # F. LỖI -> KÍCH HOẠT ROLLBACK
+                    print(f"[install] File {step_num} FAILED. Error: {combined_output}")
+                    install_logs.append(f"File {step_num}: FAILED - {combined_output}")
+                    install_logs.append("!!! TRIGGERING ROLLBACK (Uninstalling previous apps) !!!")
+                    
+                    final_code = 1
+                    
+                    # --- LOGIC ROLLBACK ---
+                    # Gỡ bỏ các app đã cài thành công trước đó trong chuỗi này
+                    for pkg in reversed(installed_packages_list):
+                        print(f"[rollback] Uninstalling {pkg}...")
+                        uninstall_res = run_adb_once(serial, f"uninstall {pkg}")
+                        if str(uninstall_res.get("code")) == "0":
+                            install_logs.append(f"Rollback: Uninstalled {pkg} (Success)")
+                        else:
+                            install_logs.append(f"Rollback: Uninstalled {pkg} (Failed)")
+                    
+                    break # Dừng vòng lặp ngay lập tức
+
+            return {
+                "serial": serial,
+                "code": final_code,
+                "stdout": "\n".join(install_logs),
+                "stderr": "" if final_code == 0 else "Installation sequence failed with rollback."
+            }
+
+        finally:
+            # G. Cleanup file APK (Luôn xóa file rác)
+            # KHÔNG xóa file ở đây nữa!
+            # Cleanup file APK sẽ thực hiện ở bước tổng sau khi tất cả các máy đã cài xong
+            # Sử dụng hàm cleanup_apk_files để thực hiện xóa file khi không còn máy nào cần
+            # (Hàm này sẽ được gọi ở ngoài luồng worker khi tất cả các thiết bị đã hoàn thành)
+            pass
+# Hàm cleanup_apk_files: Xóa file APK khi không còn máy nào cần
+def cleanup_apk_files(apk_files: List[str]):
+    for f in apk_files:
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except Exception:
+            pass
+    """
+    Chạy cài đặt cho tất cả các thiết bị, chỉ xóa file APK sau khi tất cả đã hoàn thành.
+    """
+    threads = []
+    results = []
+    # Lưu lại các file APK đã dùng
+    all_apk_files = set()
+    def worker(serial):
+        res = run_adb_sequence(serial, command_text)
+        # Thu thập file APK đã dùng
+        if "net-install" in command_text:
+            parts = shlex.split(command_text)
+            urls = parts[1:]
+            for i, url in enumerate(urls):
+                filename = url.split("/")[-1] or f"temp_file_{i}.apk"
+                if not filename.lower().endswith(".apk"):
+                    filename += f"_{i}.apk"
+                # File sẽ nằm cùng thư mục với script
+                local_path = str(Path(__file__).with_name(filename))
+                all_apk_files.add(local_path)
+        results.append(res)
+    for serial in device_serials:
+        t = threading.Thread(target=worker, args=(serial,))
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join()
+    # Sau khi tất cả đã xong, xóa file APK
+    cleanup_apk_files(list(all_apk_files))
+    return results
+
     # --- XỬ LÝ LỆNH ĐẶC BIỆT: net-push ---
     # Cú pháp: net-push <URL> <DESTINATION_PATH>
     if command_text.strip().startswith("net-push"):
@@ -119,6 +278,7 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
                 return {"serial": serial, "code": 1, "stdout": "", "stderr": "Failed to download file from URL"}
 
     steps = [step.strip() for step in command_text.split(";") if step.strip()]
+ 
     if not steps:
         return run_adb_once(serial, command_text)
 
@@ -187,8 +347,8 @@ def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    url = "http://160.25.81.154:9000/api/v1/report-devices"
-    # url = "http://localhost:9000/api/v1/report-devices"
+    # url = "http://160.25.81.154:9000/api/v1/report-devices"
+    url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
@@ -218,8 +378,8 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
-    # url = f"http://localhost:8000/api/v1/subscribe/{room_hash_value}"
+    # url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -242,14 +402,13 @@ def start_command_fetcher(
                         if not command_id:
                             command_id = meta.get("command_id")
 
-                        simplified.append(
-                            {
-                                "command_text": command_text,
-                                "serial": serial,
-                                "room_hash": room_hash,
-                                "command_id": command_id,
-                            }
-                        )
+                        simplified.append({
+                            "command_text": command_text,
+                            "serial": serial,
+                            "room_hash": room_hash,
+                            "command_id": command_id,
+                            "meta": meta,
+                        })
                     if simplified:
                         print(
                             "[fetch] room=",
@@ -294,6 +453,7 @@ def start_command_printer(
         command_text: str,
         room_hash: str,
         command_id: Optional[int],
+        meta: Optional[dict] = None,
     ) -> None:
         with game_sessions_lock:
             session = game_sessions.get(serial)
@@ -353,6 +513,7 @@ def start_command_printer(
                     code=0,
                     stdout=stdout,
                     stderr=stderr,
+                    meta=meta,
                 )
             else:
                 # Nếu không tìm thấy process thì coi là fail nghiệp vụ
@@ -363,6 +524,7 @@ def start_command_printer(
                     code=1,
                     stdout=stdout,
                     stderr=stderr or "Game process not found after start command",
+                    meta=meta,
                 )
 
         threading.Thread(target=verify_start, daemon=True).start()
@@ -372,6 +534,7 @@ def start_command_printer(
         command_text: str,
         room_hash: str,
         command_id: Optional[int],
+        meta: Optional[dict] = None,
     ) -> None:
         with game_sessions_lock:
             session = game_sessions.get(serial)
@@ -433,6 +596,7 @@ def start_command_printer(
                     code=0,
                     stdout=stdout,
                     stderr=stderr,
+                    meta=meta,
                 )
             else:
                 report_command_result(
@@ -442,6 +606,7 @@ def start_command_printer(
                     code=1,
                     stdout=stdout,
                     stderr=stderr or "Game process still running after stop command",
+                    meta=meta,
                 )
 
     def report_command_result(
@@ -451,11 +616,12 @@ def start_command_printer(
         code: int,
         stdout: str,
         stderr: str,
+        meta: Optional[dict] = None,
     ) -> None:
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
-            url = "http://160.25.81.154:9000/api/v1/report-result"
-            # url = "http://localhost:8000/api/v1/report-result"
+            print(f"[AGENT] Báo kết quả về BE: serial={serial} command_id={command_id} batch_id={meta.get('batch_id') if meta else None} success={code==0}")
+            url = "http://localhost:9000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
@@ -465,16 +631,10 @@ def start_command_printer(
                 "success": success,
                 "output": output[:4000],
             }
-            # print(
-            #     "[report-result] room=",
-            #     room_hash,
-            #     " serial=",
-            #     serial,
-            #     " command_id=",
-            #     payload["command_id"],
-            #     " success=",
-            #     payload["success"],
-            # )
+            if meta:
+                payload["meta"] = meta
+            import json
+            print(f"[AGENT] Chuẩn bị gửi report: serial={serial} command_id={command_id} batch_id={meta.get('batch_id') if meta else None} payload={json.dumps(payload, ensure_ascii=False)}")
             requests.post(url, json=payload, timeout=5)
         except Exception as exc:
             print(f"[report-result err] {serial}: {exc}")
@@ -486,9 +646,9 @@ def start_command_printer(
         command_id: Optional[int],
         results: List[Dict[str, object]],
         results_lock: threading.Lock,
+        meta: Optional[dict] = None,
     ) -> None:
         result = run_adb_sequence(serial, command_text)
-        # Kiểm tra lỗi instrument đặc biệt
         stdout = str(result.get("stdout", ""))
         stderr = str(result.get("stderr", ""))
         instrument_fail_patterns = [
@@ -505,6 +665,8 @@ def start_command_printer(
             result_copy: Dict[str, object] = dict(result)
             result_copy["room_hash"] = room_hash
             result_copy["command_id"] = command_id
+            if meta:
+                result_copy["meta"] = meta
             results.append(result_copy)
 
     def print_loop() -> None:
@@ -527,6 +689,7 @@ def start_command_printer(
                 text = str(cmd.get("command_text", ""))
                 room_hash = str(cmd.get("room_hash", ""))
                 command_id = cmd.get("command_id")
+                meta = cmd.get("meta") if "meta" in cmd else None
                 if not serial or not text:
                     continue
                 if (
@@ -540,6 +703,7 @@ def start_command_printer(
                             "command_text": text,
                             "room_hash": room_hash,
                             "command_id": command_id,
+                            "meta": meta,
                         }
                     )
                 elif "force-stop nat.myc.test" in text:
@@ -550,6 +714,7 @@ def start_command_printer(
                             "command_text": text,
                             "room_hash": room_hash,
                             "command_id": command_id,
+                            "meta": meta,
                         }
                     )
                 else:
@@ -560,6 +725,7 @@ def start_command_printer(
                             "command_text": text,
                             "room_hash": room_hash,
                             "command_id": command_id,
+                            "meta": meta,
                         }
                     )
 
@@ -569,6 +735,7 @@ def start_command_printer(
                     command_text=item["command_text"],
                     room_hash=str(item.get("room_hash", "")),
                     command_id=item.get("command_id"),
+                    meta=item.get("meta"),
                 )
 
             for item in stop_batch:
@@ -577,6 +744,7 @@ def start_command_printer(
                     command_text=item["command_text"],
                     room_hash=str(item.get("room_hash", "")),
                     command_id=item.get("command_id"),
+                    meta=item.get("meta"),
                 )
 
             if regular_batch:
@@ -586,6 +754,7 @@ def start_command_printer(
                 for item in regular_batch:
                     room_hash = str(item.get("room_hash", ""))
                     command_id = item.get("command_id")
+                    meta = item.get("meta") if "meta" in item else None
                     worker = threading.Thread(
                         target=run_regular_command,
                         args=(
@@ -595,6 +764,7 @@ def start_command_printer(
                             command_id,
                             results,
                             results_lock,
+                            meta,
                         ),
                     )
                     workers.append(worker)
@@ -611,7 +781,6 @@ def start_command_printer(
                 # Ghi log lỗi cục bộ và report kết quả lên server cho tất cả results
                 for r in results:
                     serial = str(r.get("serial", ""))
-                    # Không được dùng "or -1" vì 0 là success nhưng là giá trị falsy trong Python
                     try:
                         code = int(r.get("code", -1))
                     except (TypeError, ValueError):
@@ -620,6 +789,7 @@ def start_command_printer(
                     stderr = str(r.get("stderr", ""))
                     room_hash = str(r.get("room_hash", ""))
                     command_id = r.get("command_id")
+                    meta = r.get("meta") if "meta" in r else None
 
                     if code != 0:
                         error_text = stderr or stdout or f"exit_code={code}"
@@ -633,6 +803,7 @@ def start_command_printer(
                             code=code,
                             stdout=stdout,
                             stderr=stderr,
+                            meta=meta,
                         )
 
             with commands_lock:
