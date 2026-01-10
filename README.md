@@ -64,7 +64,10 @@ pip install pyinstaller
 cd D:\CODE\Du_An_Tool_Ads\python-client
 ./build.cmd
 ```
-
+hoặc
+```powershell
+pyinstaller --onefile --name main android_agent\main.py
+```
 Script `build.cmd` sẽ tạo file:
 
 - `dist\main.exe`
