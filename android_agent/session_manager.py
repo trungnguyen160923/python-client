@@ -2,6 +2,7 @@ import threading
 from typing import Dict, Optional
 from .adb_service import run_adb_once
 from .api_client import report_command_result
+from .log_manager import start_collectors, stop_collectors
 
 def handle_start_game(serial: str, command_text: str, room_hash: str, command_id: Optional[int], meta: Optional[dict], game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock):
     with game_sessions_lock:
@@ -10,8 +11,14 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
             return
         stop_evt = threading.Event()
         stop_flag = threading.Event()
-        session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None}
+        session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None, "log_procs": {}}
         game_sessions[serial] = session
+    
+    # Khởi chạy log collector cho serial này
+    log_procs = start_collectors([serial])
+    with game_sessions_lock:
+        session["log_procs"] = log_procs
+    
     import shlex
     cmd = ["adb", "-s", serial] + shlex.split(command_text)
     def loop():
@@ -67,6 +74,11 @@ def handle_stop_game(serial: str, command_text: str, room_hash: str, command_id:
     with game_sessions_lock:
         session = game_sessions.get(serial)
     if session:
+        # Dừng log collectors
+        log_procs = session.get("log_procs") or {}
+        if log_procs:
+            stop_collectors(log_procs)
+        
         stop_evt = session.get("stop")
         if stop_evt:
             stop_evt.set()
