@@ -43,6 +43,8 @@ pip install -r requirements.txt
 
 # Chạy tool
 python main.py
+# Hoặc
+python -m android_agent.main
 ```
 
 Lần đầu chạy, chương trình sẽ hỏi `room_hash` và lưu vào file `config.txt` cạnh `main.py`.

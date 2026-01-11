@@ -413,3 +413,5 @@ java.lang.SecurityException: Injecting input events requires the caller (or the 
 2026-01-09 01:12:49   e5dd0e31   :   Installation sequence failed with rollback.
 2026-01-09 18:53:30   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
 2026-01-09 18:57:54   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-11 01:30:13   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
+2026-01-11 01:34:50   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
