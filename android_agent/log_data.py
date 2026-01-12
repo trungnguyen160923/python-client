@@ -9,27 +9,52 @@ import threading
 import time
 import copy
 import signal
+import tempfile
 from dotenv import load_dotenv
 
 SERIAL = sys.argv[1] if len(sys.argv) > 1 else None
 ROOM_HASH = sys.argv[2] if len(sys.argv) > 2 else "unknown"
 GAME_PACKAGE = sys.argv[3] if len(sys.argv) > 3 else "unknown"
+START_RUN_ARG = sys.argv[4] if len(sys.argv) > 4 else None
+
+if START_RUN_ARG:
+    START_RUN = int(START_RUN_ARG)
+else:
+    START_RUN = int(datetime.now().timestamp())
+
 if not SERIAL:
     print("Usage: python log_data.py <serial>", file=sys.stderr)
     sys.exit(1)
 
-print(f"[log_data] INIT: Serial={SERIAL} Room={ROOM_HASH} Package={GAME_PACKAGE}", flush=True)
+print(f"[log_data] INIT: Serial={SERIAL} Room={ROOM_HASH} Package={GAME_PACKAGE} StartRun={START_RUN}", flush=True)
+
+# ================== SINGLE INSTANCE CHECK ==================
+# Tạo file lock để đảm bảo chỉ có 1 process chạy cho mỗi Serial
+lock_file_path = os.path.join(tempfile.gettempdir(), f"log_data_{SERIAL}.lock")
+lock_handle = None
+try:
+    if os.path.exists(lock_file_path):
+        # Thử xóa file lock cũ. Nếu file đang được process khác mở, lệnh này sẽ lỗi PermissionError
+        os.remove(lock_file_path)
+    # Tạo và giữ file lock
+    lock_handle = open(lock_file_path, 'w')
+    lock_handle.write(str(os.getpid()))
+    lock_handle.flush()
+except OSError:
+    print(f"[log_data] Another instance is running for {SERIAL}. Exiting to prevent duplicate logs.", flush=True)
+    sys.exit(0)
+# ===========================================================
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-API_URL = os.getenv("API_URL", "http://160.25.81.154:9000") + "/api/v1/report"
+API_BASE = os.getenv("API_URL", "http://160.25.81.154:9000")
+API_URL = API_BASE + "/api/v1/report"
 SEND_INTERVAL = 2.0  # Gửi API mỗi 2 giây
 
 # ================== STATS ==================
-START_RUN = int(datetime.now().timestamp())  # Cộng 7 giờ (7*3600)
+
 TOTAL_BANNER_REVENUE = 0.0
 last_event_signature = None
 last_event_time = 0
-
 
 # ==========================================
 # Lấy thời gian hiện tại để logcat bắt từ đó
@@ -106,7 +131,7 @@ def send_end_session():
     try:
         extra_data = {
             "start_run": START_RUN,
-            "end_run": int(datetime.now().timestamp()),  # Chỉ gửi khi stop, cộng 7 giờ
+            "end_run": int(time.time()),  # Sử dụng thời gian thực để khớp với start_run
             "inter": 0.0,
             "rewarded": 0.0,
             "banner": TOTAL_BANNER_REVENUE,
