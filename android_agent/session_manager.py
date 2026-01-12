@@ -19,14 +19,23 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
     
     # Trích xuất game_package
     game_package = "unknown"
-    # 1. Ưu tiên lấy từ meta (Do Server lấy từ bảng Group gửi xuống)
-    if meta and "game_package" in meta:
-        game_package = meta["game_package"]
-    else:
-        # 2. Fallback: Tìm chuỗi sau "-e game_package " trong command_text
-        match = re.search(r"-e game_package\s+([^\s]+)", command_text)
-        if match:
-            game_package = match.group(1)
+    
+    # Debug: In ra command_text để kiểm tra xem server gửi xuống cái gì
+    print(f"[session_manager DEBUG] Processing start_game cmd: {command_text} | Meta: {meta}", flush=True)
+
+    # 1. Ưu tiên tìm trong command_text vì đây là lệnh thực tế chạy (chứa giá trị thật)
+    match = re.search(r"-e game_package\s+([^\s]+)", command_text)
+    if match:
+        game_package = match.group(1).strip("'\"")
+
+    # 2. Nếu không tìm thấy hoặc giá trị là placeholder, mới thử lấy từ meta
+    if (game_package == "unknown" or "{" in game_package):
+        print(f"[session_manager DEBUG] game_package extracted as '{game_package}' from cmd. Checking meta...", flush=True)
+        if meta and "game_package" in meta:
+            game_package = meta["game_package"]
+            print(f"[session_manager DEBUG] Used game_package from meta: {game_package}", flush=True)
+        else:
+            print(f"[session_manager DEBUG] Meta not available or missing game_package. Meta: {meta}", flush=True)
 
     # Gọi API start_session ngay lập tức tại đây
     start_run = int(time.time())  # Sử dụng thời gian thực, không cộng 7h để tránh lỗi logic server
