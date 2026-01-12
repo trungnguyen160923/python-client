@@ -1,4 +1,5 @@
 import threading
+import re
 from typing import Dict, Optional
 from .adb_service import run_adb_once
 from .api_client import report_command_result
@@ -14,8 +15,19 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
         session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None, "log_procs": {}}
         game_sessions[serial] = session
     
+    # Trích xuất game_package
+    game_package = "unknown"
+    # 1. Ưu tiên lấy từ meta (Do Server lấy từ bảng Group gửi xuống)
+    if meta and "game_package" in meta:
+        game_package = meta["game_package"]
+    else:
+        # 2. Fallback: Tìm chuỗi sau "-e game_package " trong command_text
+        match = re.search(r"-e game_package\s+([^\s]+)", command_text)
+        if match:
+            game_package = match.group(1)
+
     # Khởi chạy log collector cho serial này
-    log_procs = start_collectors([serial])
+    log_procs = start_collectors([serial], room_hash, game_package)
     with game_sessions_lock:
         session["log_procs"] = log_procs
     
