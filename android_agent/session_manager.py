@@ -1,8 +1,10 @@
 import threading
 import re
+import time
+import requests
 from typing import Dict, Optional
 from .adb_service import run_adb_once
-from .api_client import report_command_result
+from .api_client import report_command_result, API_BASE_URL
 from .log_manager import start_collectors, stop_collectors
 
 def handle_start_game(serial: str, command_text: str, room_hash: str, command_id: Optional[int], meta: Optional[dict], game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock):
@@ -26,8 +28,27 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
         if match:
             game_package = match.group(1)
 
+    # Gọi API start_session ngay lập tức tại đây
+    start_run = int(time.time())  # Sử dụng thời gian thực, không cộng 7h để tránh lỗi logic server
+    try:
+        url = f"{API_BASE_URL}/api/v1/ads_statistics/start_session"
+        payload = {
+            "room_hash": room_hash,
+            "serial": serial,
+            "game_package": game_package,
+            "start_run": str(start_run)  # ms -> string
+        }
+        print(f"[session_manager DEBUG] Calling start_session: {url} | Payload: {payload}", flush=True)
+        resp = requests.post(url, json=payload, timeout=5)
+        if resp.status_code in (200, 201):
+            print(f"[session_manager] Started session SUCCESS for {serial}. Resp: {resp.text}", flush=True)
+        else:
+            print(f"[session_manager ERROR] Failed start_session. Code: {resp.status_code} | Body: {resp.text}", flush=True)
+    except Exception as e:
+        print(f"[session_manager EXCEPTION] Failed to start session API: {e}", flush=True)
+
     # Khởi chạy log collector cho serial này
-    log_procs = start_collectors([serial], room_hash, game_package)
+    log_procs = start_collectors([serial], room_hash, game_package, start_run=start_run)
     with game_sessions_lock:
         session["log_procs"] = log_procs
     

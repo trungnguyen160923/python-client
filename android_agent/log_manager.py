@@ -9,7 +9,7 @@ MAX_LOG_COLLECTORS = 80
 SPAWN_DELAY = 0.1  # 100ms delay giữa các spawn để tránh spike ADB
 
 
-def start_collectors(serials: List[str], room_hash: str, game_package: str, max_limit: int = MAX_LOG_COLLECTORS) -> Dict[str, Optional[subprocess.Popen]]:
+def start_collectors(serials: List[str], room_hash: str, game_package: str, start_run: int = None, max_limit: int = MAX_LOG_COLLECTORS) -> Dict[str, Optional[subprocess.Popen]]:
     """
     Khởi chạy log collectors cho danh sách serials.
     
@@ -17,6 +17,7 @@ def start_collectors(serials: List[str], room_hash: str, game_package: str, max_
         serials: Danh sách serial device
         room_hash: Room hash hiện tại
         game_package: Package name của game đang chạy
+        start_run: Timestamp bắt đầu session (optional)
         max_limit: Giới hạn tối đa số collectors (mặc định 20)
     
     Returns:
@@ -30,15 +31,19 @@ def start_collectors(serials: List[str], room_hash: str, game_package: str, max_
     if os.name == 'nt':
         popen_kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
 
+    if start_run is None:
+        start_run = int(time.time())
+
     for i, serial in enumerate(serials):
         if i >= max_limit:
             print(f"[log_manager warn] Vượt quá MAX_LOG_COLLECTORS ({max_limit}), dừng spawn")
             break
         
         try:
-            # Spawn: python -u android_agent/log_data.py <serial> <room_hash> <game_package>
+            # Spawn: python -u android_agent/log_data.py <serial> <room_hash> <game_package> <start_run>
+            print(f"[log_manager] Spawning collector for {serial} with start_run={start_run}", flush=True)
             proc = subprocess.Popen(
-                ["python", "-u", str(log_data_script), serial, room_hash, game_package],
+                ["python", "-u", str(log_data_script), serial, room_hash, game_package, str(start_run)],
                 text=True,
                 bufsize=1,
                 **popen_kwargs
