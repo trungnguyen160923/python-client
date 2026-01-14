@@ -68,7 +68,7 @@ cd D:\CODE\Du_An_Tool_Ads\python-client
 ```
 hoặc
 ```powershell
-pyinstaller --onefile --name main android_agent\main.py
+pyinstaller --onefile --name main --hidden-import=psutil android_agent\main.py --clean
 ```
 Script `build.cmd` sẽ tạo file:
 

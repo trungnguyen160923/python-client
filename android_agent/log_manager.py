@@ -2,6 +2,7 @@ import subprocess
 import time
 import os
 import signal
+import sys
 from typing import Dict, List, Optional
 from pathlib import Path
 
@@ -40,17 +41,27 @@ def start_collectors(serials: List[str], room_hash: str, game_package: str, star
             break
         
         try:
-            # Spawn: python -u android_agent/log_data.py <serial> <room_hash> <game_package> <start_run>
+            # Kiểm tra đang chạy source hay chạy exe
+            if getattr(sys, 'frozen', False):
+                # Đang chạy file EXE - gọi chính mình kèm cờ --worker
+                executable = sys.executable
+                cmd = [executable, "--worker", "log_data", serial, room_hash, game_package, str(start_run)]
+            else:
+                # Đang chạy code Python thường (Dev)
+                executable = sys.executable  # python.exe
+                script_path = Path(__file__).parent / "log_data.py"
+                cmd = [executable, "-u", str(script_path), serial, room_hash, game_package, str(start_run)]
+
             print(f"[log_manager] Spawning collector for {serial} with start_run={start_run}", flush=True)
             proc = subprocess.Popen(
-                ["python", "-u", str(log_data_script), serial, room_hash, game_package, str(start_run)],
+                cmd,
                 text=True,
                 bufsize=1,
                 **popen_kwargs
             )
             log_procs[serial] = proc
             print(f"[log_manager] Started collector for {serial} (PID: {proc.pid})")
-            
+
             # Delay để tránh spike ADB
             if i < len(serials) - 1:
                 time.sleep(SPAWN_DELAY)

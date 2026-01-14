@@ -1,6 +1,8 @@
 import threading
 import time
 import collections
+import multiprocessing
+import sys
 from typing import Dict, List, Deque, Optional
 from android_agent.config import load_room_hash, REPORT_INTERVAL_SEC, FETCH_INTERVAL_SEC, PRINT_INTERVAL_SEC, STATUS_INTERVAL_SEC, CLEAR_INTERVAL_SEC
 from android_agent.utils import append_error_log, clear_console, cleanup_old_logs, cleanup_temp_files, cleanup_lock_files
@@ -8,6 +10,7 @@ from android_agent.api_client import report_devices, fetch_commands, report_comm
 from android_agent.adb_service import list_adb_devices
 from android_agent.command_processor import run_adb_sequence
 from android_agent.session_manager import handle_start_game, handle_stop_game
+from android_agent import log_data
 
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC):
     def report_loop():
@@ -276,4 +279,17 @@ def main():
         stop_event.set()
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()  # Bắt buộc cho PyInstaller trên Windows
+
+    # --- LOGIC ĐIỀU PHỐI (DISPATCHER) ---
+    if len(sys.argv) > 1 and sys.argv[1] == "--worker":
+        # Đây là Process con (Worker)
+        if sys.argv[2] == "log_data":
+            # Chạy logic của Log Collector
+            # Cắt bỏ các tham số --worker log_data để log_data.py đọc đúng index
+            sys.argv = [sys.argv[0]] + sys.argv[3:]
+            log_data.run_collector()
+            sys.exit(0)
+
+    # --- LOGIC CHÍNH (MAIN AGENT) ---
     main()
