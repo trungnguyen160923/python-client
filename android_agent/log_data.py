@@ -238,3 +238,13 @@ finally:
     send_end_session()
     adb.terminate()
     print("ADB process closed")
+
+    # Cleanup lock file to prevent accumulation
+    try:
+        if 'lock_handle' in globals() and lock_handle:
+            lock_handle.close()
+        if os.path.exists(lock_file_path):
+            os.remove(lock_file_path)
+            print(f"[Cleanup] Removed lock file for {SERIAL}")
+    except Exception as e:
+        print(f"[Cleanup] Failed to cleanup lock file for {SERIAL}: {e}")

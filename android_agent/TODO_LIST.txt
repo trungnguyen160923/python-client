@@ -1,0 +1,132 @@
+# ANDROID_AGENT TODO LIST - Critical Issues & Improvements
+# Generated: January 15, 2026
+
+================================================================================
+PHASE 1: CRITICAL FIXES (Nguy hiểm nhất - Fix ngay)
+================================================================================
+
+🔴 ULTRA CRITICAL (Nguy hiểm hệ thống):
+--------------------------------------------------------------------------------
+1. Fix File Write Race Condition
+   Status: COMPLETED
+   Description: Thêm UUID/thread ID vào tên file trong download_temp_file() để tránh conflict khi multiple threads download cùng URL
+   Files: android_agent/utils.py (download_temp_file function)
+   Impact: Critical - File corruption, installation failures
+   Priority: HIGH
+
+2. Fix os.rename() Race Condition
+   Status: COMPLETED
+   Description: Thêm lock hoặc atomic operations cho logic rename file trong net-install
+   Files: android_agent/command_processor.py (net-install section)
+   Impact: Critical - FileNotFoundError, crashes
+   Priority: HIGH
+
+3. Fix Head-of-Line Blocking
+   Status: COMPLETED
+   Description: Thay thế List commands bằng Queue để cho phép queue lệnh mới khi worker đang xử lý batch cũ
+   Files: android_agent/main.py (commands handling logic)
+   Impact: Critical - System throughput degradation
+   Priority: HIGH
+
+4. Add Thread.join() Timeout
+   Status: COMPLETED
+   Description: Thêm timeout cho tất cả thread.join() trong main.py để tránh deadlock vĩnh viễn
+   Files: android_agent/main.py (regular_batch processing)
+   Impact: Critical - System hangs indefinitely
+   Priority: HIGH
+
+🟡 CRITICAL (Nguy hiểm ổn định hệ thống):
+--------------------------------------------------------------------------------
+5. Fix Process Leak in Session Manager
+   Status: COMPLETED
+   Description: Add timeout cho proc.communicate() trong session_manager loop()
+   Files: android_agent/session_manager.py (handle_start_game loop)
+   Impact: High - Resource leaks, hanging processes
+   Priority: HIGH
+
+6. Fix Memory Leak all_apk_files
+   Status: COMPLETED
+   Description: Thêm threading.Lock để bảo vệ set all_apk_files trong multi-threading
+   Files: android_agent/main.py (regular_batch worker_func)
+   Impact: High - Memory leaks in long-running processes
+   Priority: HIGH
+
+================================================================================
+PHASE 2: STABILITY IMPROVEMENTS (Tăng độ ổn định)
+================================================================================
+
+7. Add Game Process Heartbeat
+   Status: COMPLETED
+   Description: Tạo monitor thread kiểm tra PID game liên tục và auto-restart nếu crash
+   Files: android_agent/session_manager.py
+   Impact: Medium - Undetected game crashes
+   Priority: MEDIUM
+
+8. Add API Retry Logic
+   Status: COMPLETED
+   Description: Implement exponential backoff và retry cho tất cả API calls trong api_client.py
+   Files: android_agent/api_client.py
+   Impact: High - Network failures cause data loss
+   Priority: MEDIUM
+
+9. Improve Resource Cleanup
+   Status: COMPLETED
+   Description: Thêm try...finally blocks để cleanup downloaded_files, processes, và file locks
+   Files: android_agent/command_processor.py, android_agent/session_manager.py, android_agent/log_data.py
+   Impact: Medium - Resource leaks, temp file accumulation
+   Priority: MEDIUM
+
+================================================================================
+PHASE 3: PERFORMANCE & MONITORING (Tối ưu hiệu năng)
+================================================================================
+
+10. Add Process Health Monitoring
+    Status: COMPLETED
+    Description: Monitor ADB processes và log collectors, auto-restart nếu die
+    Files: android_agent/log_manager.py, android_agent/adb_service.py
+    Impact: Low - Process failures not detected
+    Priority: LOW
+
+11. Add Connection Pooling
+    Status: COMPLETED
+    Description: Implement requests session reuse để cải thiện performance API calls
+    Files: android_agent/api_client.py
+    Impact: Low - Performance optimization
+    Priority: LOW
+
+12. Add Comprehensive Error Handling
+    Status: PENDING
+    Description: Thêm proper logging và error recovery cho tất cả exception cases
+    Files: All files - comprehensive error handling
+    Impact: Medium - Better debugging and stability
+    Priority: LOW
+
+================================================================================
+COMPLETED ITEMS
+================================================================================
+
+- Fix ADB Timeout (adb_service.py) - COMPLETED
+- Initial analysis and todo creation - COMPLETED
+- Add Dynamic Timeout for ADB Operations - COMPLETED
+- Fix File Write Race Condition (utils.py) - COMPLETED
+- Fix os.rename() Race Condition (Prevention approach) - COMPLETED
+- Fix Head-of-Line Blocking (collections.deque) - COMPLETED
+- Add Thread.join() Timeout (Deadline Pattern) - COMPLETED
+- Fix Process Leak in Session Manager (Polling Loop + Smart Circuit Breaker) - COMPLETED
+- Fix Memory Leak all_apk_files (Data Embedding Approach) - COMPLETED
+- Add Game Process Heartbeat (State Synchronization) - COMPLETED
+- Add API Retry Logic (Exponential Backoff + Selective Retry) - COMPLETED
+- Improve Resource Cleanup (Comprehensive Cleanup System) - COMPLETED
+- Add Process Health Monitoring (Integrated Log Collector Monitoring) - COMPLETED
+- Add Connection Pooling (Global Session với HTTPAdapter) - COMPLETED
+- Fix Process Leak in Session Manager (Polling Loop) - COMPLETED
+
+================================================================================
+NOTES
+================================================================================
+
+- Priority: HIGH = Fix immediately, MEDIUM = Fix soon, LOW = Nice to have
+- Impact: Critical = System crash/hang, High = Major functionality, Medium = Minor issues, Low = Performance
+- All fixes should include proper error handling and logging
+- Test thoroughly with multiple devices after each fix
+- Consider backward compatibility for all changes

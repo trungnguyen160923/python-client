@@ -62,13 +62,8 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
                     install_logs.append(f"File {step_num}: Download failed ({url})")
                     final_code = 1
                     break
-                if not local_file.lower().endswith(".apk"):
-                    new_path = local_file + f"_{i}.apk"
-                    try:
-                        os.rename(local_file, new_path)
-                        local_file = new_path
-                    except OSError:
-                        pass
+                # File already has .apk extension from download_temp_file() (Prevention approach)
+                # No rename needed - eliminates os.rename() race condition
                 downloaded_files.append(local_file)
                 apk_ref_counter[local_file] = apk_ref_counter.get(local_file, 0) + 1
                 packages_before = get_installed_packages(serial)
@@ -110,7 +105,15 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
                 "downloaded_files": downloaded_files
             }
         finally:
-            pass
+            # CRITICAL: Cleanup downloaded files if installation failed
+            # This prevents disk space accumulation from failed net-install operations
+            for file_path in downloaded_files:
+                try:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        print(f"[Cleanup] Removed failed download: {os.path.basename(file_path)}")
+                except Exception as e:
+                    print(f"[Cleanup] Failed to remove {os.path.basename(file_path)}: {e}")
 
     # --- XỬ LÝ CHUỖI LỆNH THƯỜNG ---
     steps = [step.strip() for step in command_text.split(";") if step.strip()]

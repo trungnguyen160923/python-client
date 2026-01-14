@@ -415,3 +415,55 @@ java.lang.SecurityException: Injecting input events requires the caller (or the 
 2026-01-09 18:57:54   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
 2026-01-11 01:30:13   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
 2026-01-11 01:34:50   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
+2026-01-15 02:10:50   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
+2026-01-15 02:30:54   ZDPN457HG67DIFN7   :   android.util.AndroidException: INSTRUMENTATION_FAILED: nat.myc.test/androidx.test.runner.AndroidJUnitRunner
+	at com.android.commands.am.Instrument.run(Instrument.java:519)
+	at com.android.commands.am.Am.runInstrument(Am.java:202)
+	at com.android.commands.am.Am.onRun(Am.java:80)
+	at com.android.internal.os.BaseCommand.run(BaseCommand.java:60)
+	at com.android.commands.am.Am.main(Am.java:50)
+	at com.android.internal.os.RuntimeInit.nativeFinishInit(Native Method)
+	at com.android.internal.os.RuntimeInit.main(RuntimeInit.java:439)
+2026-01-15 02:31:40   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 02:31:40   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 02:31:41   abc   :   adb.exe: device 'abc' not found
+2026-01-15 02:31:41   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 02:38:56   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 02:38:56   abc   :   adb.exe: device 'abc' not found
+2026-01-15 02:38:56   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 02:38:56   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 02:39:19   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 02:39:19   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 02:39:19   abc   :   adb.exe: device 'abc' not found
+2026-01-15 02:39:19   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 02:40:41   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 02:40:41   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 02:40:41   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 02:40:41   abc   :   adb.exe: device 'abc' not found
+2026-01-15 03:03:16   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 03:03:16   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 03:03:16   abc   :   adb.exe: device 'abc' not found
+2026-01-15 03:03:16   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 03:17:15   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 03:17:15   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 03:17:15   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 03:17:15   abc   :   adb.exe: device 'abc' not found
+2026-01-15 03:28:23   abc   :   Installation sequence failed with rollback.
+2026-01-15 03:28:23   RFCWA172XFK   :   Installation sequence failed with rollback.
+2026-01-15 03:28:23   abcd   :   Installation sequence failed with rollback.
+2026-01-15 03:28:23   RS4HU8XW4HY9FE4X   :   Installation sequence failed with rollback.
+2026-01-15 03:44:29   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 03:44:29   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 03:44:29   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 03:44:29   abc   :   adb.exe: device 'abc' not found
+2026-01-15 04:12:11   abc   :   adb.exe: device 'abc' not found
+2026-01-15 04:12:11   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 04:12:11   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 04:12:11   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 04:12:24   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 04:12:24   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-15 04:12:24   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 04:12:24   abc   :   adb.exe: device 'abc' not found
+2026-01-15 04:21:02   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
+2026-01-15 04:21:19   RS4HU8XW4HY9FE4X   :   Installation sequence failed with rollback.
+2026-01-15 04:21:19   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
