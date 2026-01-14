@@ -1,6 +1,8 @@
 import time
 import os
 import requests
+import psutil
+import tempfile
 from .config import LOG_FILE
 from typing import Optional
 
@@ -128,52 +130,57 @@ def cleanup_temp_files(directory=".", older_than_hours=24):
 
 def cleanup_lock_files():
     """Clean up stale lock files from crashed processes"""
-    import tempfile
 
     lock_dir = tempfile.gettempdir()
-    cleaned_count = 0
+    print(f"[Init] Scanning lock files in {lock_dir}...") # Debug log
 
-    if not os.path.exists(lock_dir):
-        return
+    try:
+        for filename in os.listdir(lock_dir):
+            if not filename.startswith("log_data_") or not filename.endswith(".lock"):
+                continue
 
-    for filename in os.listdir(lock_dir):
-        if not filename.startswith("log_data_") or not filename.endswith(".lock"):
-            continue
-
-        filepath = os.path.join(lock_dir, filename)
-
-        try:
-            # Read PID from lock file
-            with open(filepath, 'r') as f:
-                pid_str = f.read().strip()
+            filepath = os.path.join(lock_dir, filename)
 
             try:
-                pid = int(pid_str)
+                with open(filepath, 'r') as f:
+                    content = f.read().strip()
+                    if not content:
+                        os.remove(filepath)
+                        continue
+                    pid = int(content)
 
-                # Check if process still exists (Unix/Linux/Mac)
+                # --- ĐOẠN FIX QUAN TRỌNG ---
+                is_running = False
                 try:
-                    os.kill(pid, 0)  # Signal 0 doesn't kill, just checks existence
-                    # Process exists, keep lock file
-                    continue
+                    if pid <= 0:
+                        is_running = False # PID 0 hoặc âm là không hợp lệ với user process
+                    else:
+                        is_running = psutil.pid_exists(pid)
                 except OSError:
-                    # Process doesn't exist, safe to remove lock
+                    # Catch WinError 87 hoặc Access Denied -> Coi như process không tồn tại
+                    is_running = False
+                except Exception:
+                    is_running = False
+                # ---------------------------
+
+                # Check if process still exists
+                if not is_running:
+                    try:
+                        os.remove(filepath)
+                        print(f"[cleanup] Removed stale lock file: {filename} (PID {pid} dead)")
+                    except OSError:
+                        pass # File có thể đã bị xóa bởi thread khác
+
+            except (ValueError, FileNotFoundError, PermissionError):
+                # Lock file corrupted or process gone
+                try:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                        print(f"[cleanup] Removed invalid lock file: {filename}")
+                except:
                     pass
-
-            except ValueError:
-                # Invalid PID format, remove corrupted lock
-                pass
-
-            # Remove stale/invalid lock file
-            os.remove(filepath)
-            cleaned_count += 1
-            print(f"[Cleanup] Removed stale lock file: {filename}")
-
-        except (FileNotFoundError, OSError) as e:
-            # Lock file already gone or permission issue
-            print(f"[Cleanup] Could not process lock file {filename}: {e}")
-
-    if cleaned_count > 0:
-        print(f"[Cleanup] Removed {cleaned_count} stale lock files")
+    except Exception as e:
+        print(f"[Init] Warning: Failed to cleanup lock files: {e}")
 
 def clear_console():
     try:

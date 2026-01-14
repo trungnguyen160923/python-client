@@ -1,16 +1,42 @@
-/build/
-/.venv/
+# --- Python Core ---
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.spec
 .Python
 .pytest_cache/
+
+# --- Virtual Environment ---
+.venv/
+env/
+venv/
+ENV/
+
+# --- Distribution / Build (PyInstaller) ---
+/build/
+/dist/
+*.spec
+# Lưu ý: *.spec có thể giữ lại nếu bạn muốn lưu cấu hình build. 
+# Nhưng nếu bạn luôn build bằng lệnh dài ngoằng thì ignore cũng được.
+
+# --- Logs & Databases ---
+*.log
+.log_error.txt
+logs/
+*.sqlite3
+
+# --- IDE & Editors ---
 .vscode/
 .idea/
+*.swp
+*.swo
 
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Secrets / Environment Variables (NEVER COMMIT) ---
 .env
-.log_error.txt
-
-logs/
+.env.local
+.env.*.local
