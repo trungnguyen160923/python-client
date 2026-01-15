@@ -10,6 +10,26 @@ import os
 import shlex
 import subprocess
 
+# Global registry for session status - shared across modules
+_session_registry: Dict[str, Dict[str, object]] = {}
+_session_registry_lock = threading.Lock()
+
+def register_session(serial: str, session_data: Dict[str, object]) -> None:
+    """Register a session in global registry"""
+    with _session_registry_lock:
+        _session_registry[serial] = session_data
+
+def unregister_session(serial: str) -> None:
+    """Unregister a session from global registry"""
+    with _session_registry_lock:
+        _session_registry.pop(serial, None)
+
+def get_session_status(serial: str) -> Optional[str]:
+    """Get session status from global registry"""
+    with _session_registry_lock:
+        session = _session_registry.get(serial)
+        return session.get("status") if session else None
+
 def handle_start_game(serial: str, command_text: str, room_hash: str, command_id: Optional[int], meta: Optional[dict], game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock):
     with game_sessions_lock:
         session = game_sessions.get(serial)
@@ -17,8 +37,11 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
             return
         stop_evt = threading.Event()
         stop_flag = threading.Event()
-        session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None, "log_procs": {}}
+        session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None, "log_procs": {}, "status": "INITIALIZING"}
         game_sessions[serial] = session
+
+        # Register in global registry
+        register_session(serial, session)
     
     # Trích xuất game_package
     game_package = "unknown"
@@ -113,8 +136,11 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
 
                 with game_sessions_lock:
                     session["process"] = proc
+                    session["status"] = "RUNNING_GAME"
+                    # Update global registry
+                    register_session(serial, session)
 
-                print(f"[Game] Started session for {serial} (PID: {proc.pid})")
+                print(f"[Game] Started session for {serial} (PID: {proc.pid}) - Status: RUNNING_GAME")
                 start_time = time.time()
 
                 # POLLING LOOP - Safe monitoring for long-running processes
@@ -143,6 +169,10 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
                     # CHECK 3: Safety timeout (24h absolute limit)
                     if session_duration > 86400:  # 24 hours
                         print(f"[Game] Session {serial} reached 24h safety timeout")
+                        with game_sessions_lock:
+                            session["status"] = "ACTIVE"
+                            # Update global registry
+                            register_session(serial, session)
                         break
 
                     # CHECK 4: Health monitoring (every 5min after 1h)
@@ -227,12 +257,18 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
                         "last_error_time": time.time(),
                         "total_uptime": time.time() - start_time if 'start_time' in locals() else 0
                     }
+                    # Update global registry
+                    register_session(serial, session)
 
                 break
 
             # Final stop check before auto-restart
             if stop_evt.is_set() or session["stop_flag"].is_set():
                 print(f"[Game] Stop confirmed for {serial}")
+                with game_sessions_lock:
+                    session["status"] = "ACTIVE"
+                    # Update global registry
+                    register_session(serial, session)
                 break
 
             # PROGRESSIVE BACKOFF: Wait longer after each failure
@@ -308,6 +344,10 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
 def handle_stop_game(serial: str, command_text: str, room_hash: str, command_id: Optional[int], meta: Optional[dict], game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock):
     with game_sessions_lock:
         session = game_sessions.get(serial)
+        if session:
+            session["status"] = "ACTIVE"  # Set status when stopping
+            # Update global registry
+            register_session(serial, session)
     if session:
         # Dừng log collectors
         log_procs = session.get("log_procs") or {}
@@ -343,6 +383,9 @@ def handle_stop_game(serial: str, command_text: str, room_hash: str, command_id:
             thread.join(timeout=1)
         with game_sessions_lock:
             game_sessions.pop(serial, None)
+
+        # Unregister from global registry
+        unregister_session(serial)
         _ = run_adb_once(serial, command_text)
         check_cmd = f"shell pidof nat.myc.test"
         res = run_adb_once(serial, check_cmd)

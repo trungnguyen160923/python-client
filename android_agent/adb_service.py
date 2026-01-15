@@ -74,11 +74,26 @@ def list_adb_devices() -> List[Dict[str, object]]:
         if len(parts) < 2:
             continue
         serial, state = parts[0], parts[1]
-        status = "active" if state == "device" else state
+
+        # Get ADB status
+        adb_status = "active" if state == "device" else state
+
+        # Check if we have session status for this device
+        session_status = None
+        try:
+            from android_agent.session_manager import get_session_status
+            session_status = get_session_status(serial)
+        except Exception as e:
+            session_status = None
+
+        # Priority: Session status > ADB status
+        # If device has running session, show session status instead of ADB status
+        final_status = session_status if session_status else adb_status
+
         devices.append({
             "serial": serial,
             "data": {},
-            "status": status,
+            "status": final_status,
             "device_type": "android",
         })
     return devices
