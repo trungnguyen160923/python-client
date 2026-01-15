@@ -208,6 +208,16 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
             if restart_count >= max_restarts:
                 print(f"[Game] CRITICAL: {serial} failed {max_restarts} times consecutively. STOPPING RESTART LOOP.")
 
+                # REPORT FAILURE TO SERVER IMMEDIATELY
+                report_command_result({
+                    "room_hash": room_hash,
+                    "serial": serial,
+                    "command_id": int(command_id) if command_id is not None else 0,
+                    "success": False,
+                    "output": f"CRITICAL: Game crashed {restart_count} times consecutively. Circuit breaker tripped.",
+                    "meta": meta,
+                })
+
                 # STATE SYNCHRONIZATION: Update session status for main.py visibility
                 with game_sessions_lock:
                     session["status"] = "ERROR_CRASH"
@@ -239,9 +249,15 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
     thread.start()
     def verify_start():
         max_retries = 30  # Allow up to 30 seconds to wait
-        target_package = "nat.myc.test"
+        target_package = game_package  # Sử dụng game_package thực tế thay vì "nat.myc.test"
 
-        print(f"[Verify] Checking start status for {serial} (Max 30s)...")
+        print(f"[Verify] Checking start status for {serial} (Max 30s)... Target package: {target_package}")
+
+        # Check if circuit breaker already reported failure
+        with game_sessions_lock:
+            if session.get("status") == "ERROR_CRASH":
+                print(f"[Verify] Circuit breaker already reported failure for {serial}, skipping verification")
+                return
 
         for i in range(max_retries):
             # Check if PID exists
@@ -269,15 +285,22 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
 
         # If we exhaust all 30 attempts (30s) and still no PID -> Report FAILED
         print(f"[Verify] FAILED: Timed out waiting for {target_package}")
-        res = run_adb_once(serial, check_cmd)  # Get final error log
-        stderr = str(res.get("stderr", ""))
+
+        # Try to get final error log, but don't hang if ADB is overloaded
+        try:
+            res = run_adb_once(serial, check_cmd)  # Get final error log
+            stderr = str(res.get("stderr", ""))
+            output_msg = stderr or "Timeout: Game process not found after 30s"
+        except Exception as e:
+            print(f"[Verify] Warning: Could not get final error log: {e}")
+            output_msg = "Timeout: Game process not found after 30s"
 
         report_command_result({
             "room_hash": room_hash,
             "serial": serial,
             "command_id": int(command_id) if command_id is not None else 0,
             "success": False,
-            "output": stderr or "Timeout: Game process not found after 30s",
+            "output": output_msg,
             "meta": meta,
         })
     threading.Thread(target=verify_start, daemon=True).start()

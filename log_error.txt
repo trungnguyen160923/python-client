@@ -467,3 +467,14 @@ java.lang.SecurityException: Injecting input events requires the caller (or the 
 2026-01-15 04:21:02   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found
 2026-01-15 04:21:19   RS4HU8XW4HY9FE4X   :   Installation sequence failed with rollback.
 2026-01-15 04:21:19   ZDPN457HG67DIFN7   :   Installation sequence failed with rollback.
+2026-01-15 20:14:48   abc   :   adb.exe: device 'abc' not found
+2026-01-15 20:14:48   ce0216024b0d102305   :   adb.exe: device 'ce0216024b0d102305' not found
+2026-01-15 20:14:48   abcd   :   adb.exe: device 'abcd' not found
+2026-01-15 20:14:48   ce0117110af9713a05   :   adb.exe: device 'ce0117110af9713a05' not found
+2026-01-15 20:14:48   ce021602335bdc0d02   :   adb.exe: device 'ce021602335bdc0d02' not found
+2026-01-15 20:14:48   ce01171119989a1702   :   adb.exe: device 'ce01171119989a1702' not found
+2026-01-15 20:14:48   ce01160184cf891b02   :   adb.exe: device 'ce01160184cf891b02' not found
+2026-01-15 20:14:49   ce021602750c553d02   :   adb.exe: device 'ce021602750c553d02' not found
+2026-01-15 20:14:49   ce02160265ac7d2004   :   adb.exe: device 'ce02160265ac7d2004' not found
+2026-01-15 20:14:49   ce011601ca2b952604   :   adb.exe: device 'ce011601ca2b952604' not found
+2026-01-15 20:14:49   ce02171272041ce70c   :   adb.exe: device 'ce02171272041ce70c' not found
