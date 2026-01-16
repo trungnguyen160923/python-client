@@ -3,7 +3,7 @@ import sys
 import json
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 import threading
 import time
@@ -184,6 +184,7 @@ def run_collector():
     # Lấy thời gian hiện tại để logcat bắt từ đó
     def get_logcat_time():
         now = datetime.now()
+        now = datetime.now() - timedelta(minutes=2) 
         MM = str(now.month).zfill(2)
         DD = str(now.day).zfill(2)
         HH = str(now.hour).zfill(2)
