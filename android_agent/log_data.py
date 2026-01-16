@@ -52,18 +52,6 @@ class LogBatcher:
         self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
         self.sender_thread.start()
 
-    def add_log(self, log_entry: dict):
-        """Add log entry to local queue (non-blocking)"""
-        try:
-            self.queue.put_nowait(log_entry)
-        except:
-            # Queue full, try to drop oldest and add new
-            try:
-                self.queue.get_nowait()  # Drop oldest
-                self.queue.put_nowait(log_entry)
-            except:
-                pass  # Both operations failed, skip log
-
     def _sender_loop(self):
         """Background thread để batch send logs"""
         batch = []
@@ -114,7 +102,7 @@ class LogBatcher:
             # Send với timeout
             resp = requests.post(self.api_url, json=payload, timeout=10)
 
-            if resp.status_code == 200:
+            if resp.status_code in (200, 201):
                 print(f"[LogBatcher] ✓ Sent {len(batch)} logs for {self.serial}")
             else:
                 print(f"[LogBatcher] ✗ API error {resp.status_code} for {self.serial}")
@@ -179,7 +167,7 @@ def run_collector():
     # ===========================================================
 
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-    API_BASE_URL = os.getenv("API_BASE_URL", "http://160.25.81.154:9000")
+    API_BASE_URL = os.getenv("API_BASE_URL")
     API_URL = API_BASE_URL  + "/api/v1/report"
 
     # Initialize local batcher và rate limiter cho process này
@@ -288,11 +276,12 @@ def run_collector():
                 "room_hash": ROOM_HASH,
                 "serial": SERIAL,
                 "status": "pass",
-                "game_package": GAME_PACKAGE,
+                "game_package": GAME_PACKAGE, 
                 "extra_data": extra_data,
             }
             # Gửi đồng bộ (không dùng thread) vì process sắp tắt
             print(f"[log_data] Sending END_RUN for {SERIAL}...", flush=True)
+            print(f"[log_data DEBUG] Final Payload: {json.dumps(final_payload)}", flush=True)
             requests.post(API_URL, json=final_payload, timeout=3)
             print(f"[log_data] Sent END_RUN for {SERIAL}")
         except Exception as e:
@@ -364,15 +353,13 @@ def run_collector():
                 print(f"[log_data] {SERIAL} Rate limited, skipping log entry")
                 return
 
-            # Add to batcher (non-blocking)
-            batcher.add_log(log_entry)
-
             if ad_format == "BANNER":
                 nonlocal TOTAL_BANNER_REVENUE
                 TOTAL_BANNER_REVENUE += value
                 print(f"[log_data] {SERIAL} ACCUMULATED BANNER: +{value} | Total: {TOTAL_BANNER_REVENUE}", flush=True)
                 # Banner events are batched, not sent immediately
             else:
+                # Add to batcher (non-blocking) only for non-banner logs if needed, or remove completely if handled by send_event_to_api
                 print(f"[log_data] {SERIAL} DETECTED AD: {ad_format} | Value: {value}")
                 # Critical events (Inter/Rewarded) still sent immediately for real-time processing
                 send_event_to_api(ad_format, value)

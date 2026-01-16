@@ -12,7 +12,7 @@ from .utils import safe_log_exception, exception_storage
 
 # Load environment configuration
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
-API_BASE_URL = os.getenv("API_BASE_URL", "http://160.25.81.154:9000")
+API_BASE_URL = os.getenv("API_BASE_URL")
 
 # Global session with connection pooling (thread-safe module-level initialization)
 session = requests.Session()

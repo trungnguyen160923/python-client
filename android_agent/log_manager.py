@@ -128,6 +128,20 @@ def kill_process_group_safe(pgid: Optional[int], pid: int, serial: str) -> bool:
 
 def _force_kill_windows(proc: subprocess.Popen, serial: str) -> bool:
     """Windows-specific force kill với process group awareness"""
+    # [FIX] Thử dừng nhẹ nhàng bằng CTRL_BREAK trước để log_data kịp gửi API
+    try:
+        print(f"[log_manager] Sending CTRL_BREAK to {serial} (PID: {proc.pid})...")
+        proc.send_signal(signal.CTRL_BREAK_EVENT)
+        try:
+            # Chờ tối đa 5s để process kịp gửi API (timeout của request là 3s)
+            proc.wait(timeout=5.0)
+            print(f"[log_manager] ✓ Gracefully stopped {serial}")
+            return True
+        except subprocess.TimeoutExpired:
+            print(f"[log_manager] Graceful stop timed out for {serial}, escalating...")
+    except Exception as e:
+        print(f"[log_manager] Failed to send CTRL_BREAK to {serial}: {e}")
+
     # Get process group info
     pg_info = get_process_group_info_safe(proc)
     pgid = pg_info.get('pgid')
