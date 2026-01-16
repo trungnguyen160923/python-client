@@ -1,0 +1,47 @@
+
+nat.myc.ToolPlayGame:
+Error in initializationError(nat.myc.ToolPlayGame):
+java.lang.RuntimeException: Failed loading specified test class 'nat.myc.ToolPlayGame'
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:50)
+	at androidx.test.internal.runner.TestLoader.getRunnersFor(TestLoader.java:64)
+	at androidx.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:842)
+	at androidx.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:663)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:437)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2653)
+Caused by: java.lang.ClassNotFoundException: nat.myc.ToolPlayGame
+	at java.lang.Class.classForName(Native Method)
+	at java.lang.Class.forName(Class.java:597)
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:44)
+	... 5 more
+Caused by: java.lang.ClassNotFoundException: Didn't find class "nat.myc.ToolPlayGame" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/system/framework/android.test.mock.jar", zip file "/system/framework/android.test.base.jar", zip file "/data/app/~~cJJYPkBKn9tJQhtxVe_5zQ==/nat.myc.test-uME9pfOKC676FHJb0BHpPg==/base.apk", zip file "/data/app/~~l1BIgYvkrxkwTFPvmvF3Yw==/nat.myc-pYOIwFaXKwnvqzPh2YQjAA==/base.apk"],nativeLibraryDirectories=[/data/app/~~cJJYPkBKn9tJQhtxVe_5zQ==/nat.myc.test-uME9pfOKC676FHJb0BHpPg==/lib/arm64, /data/app/~~l1BIgYvkrxkwTFPvmvF3Yw==/nat.myc-pYOIwFaXKwnvqzPh2YQjAA==/lib/arm64, /system/lib64, /system_ext/lib64]]
+	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+	... 8 more
+
+
+Time: 0,007
+There was 1 failure:
+1) initializationError(nat.myc.ToolPlayGame)
+java.lang.RuntimeException: Failed loading specified test class 'nat.myc.ToolPlayGame'
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:50)
+	at androidx.test.internal.runner.TestLoader.getRunnersFor(TestLoader.java:64)
+	at androidx.test.internal.runner.TestRequestBuilder.build(TestRequestBuilder.java:842)
+	at androidx.test.runner.AndroidJUnitRunner.buildRequest(AndroidJUnitRunner.java:663)
+	at androidx.test.runner.AndroidJUnitRunner.onStart(AndroidJUnitRunner.java:437)
+	at android.app.Instrumentation$InstrumentationThread.run(Instrumentation.java:2653)
+Caused by: java.lang.ClassNotFoundException: nat.myc.ToolPlayGame
+	at java.lang.Class.classForName(Native Method)
+	at java.lang.Class.forName(Class.java:597)
+	at androidx.test.internal.runner.DirectTestLoader.doCreateRunner(DirectTestLoader.java:44)
+	... 5 more
+Caused by: java.lang.ClassNotFoundException: Didn't find class "nat.myc.ToolPlayGame" on path: DexPathList[[zip file "/system/framework/android.test.runner.jar", zip file "/system/framework/android.test.mock.jar", zip file "/system/framework/android.test.base.jar", zip file "/data/app/~~cJJYPkBKn9tJQhtxVe_5zQ==/nat.myc.test-uME9pfOKC676FHJb0BHpPg==/base.apk", zip file "/data/app/~~l1BIgYvkrxkwTFPvmvF3Yw==/nat.myc-pYOIwFaXKwnvqzPh2YQjAA==/base.apk"],nativeLibraryDirectories=[/data/app/~~cJJYPkBKn9tJQhtxVe_5zQ==/nat.myc.test-uME9pfOKC676FHJb0BHpPg==/lib/arm64, /data/app/~~l1BIgYvkrxkwTFPvmvF3Yw==/nat.myc-pYOIwFaXKwnvqzPh2YQjAA==/lib/arm64, /system/lib64, /system_ext/lib64]]
+	at dalvik.system.BaseDexClassLoader.findClass(BaseDexClassLoader.java:259)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:637)
+	at java.lang.ClassLoader.loadClass(ClassLoader.java:573)
+	... 8 more
+
+FAILURES!!!
+Tests run: 1,  Failures: 1
+
+

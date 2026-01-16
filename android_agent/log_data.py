@@ -10,7 +10,137 @@ import time
 import copy
 import signal
 import tempfile
+from queue import Queue, Empty
+from collections import deque
 from dotenv import load_dotenv
+
+class RateLimiter:
+    """Simple rate limiter per log_data process"""
+
+    def __init__(self, max_per_minute: int = 30):
+        self.max_per_minute = max_per_minute
+        self.requests = deque()
+
+    def allow(self) -> bool:
+        """Check if request is allowed within rate limit"""
+        current_time = time.time()
+
+        # Remove requests outside 1-minute window
+        while self.requests and self.requests[0] < current_time - 60:
+            self.requests.popleft()
+
+        # Check if under limit
+        if len(self.requests) >= self.max_per_minute:
+            return False  # Rate limited
+
+        # Add current request
+        self.requests.append(current_time)
+        return True
+
+class LogBatcher:
+    """Local log batcher cho mỗi log_data.py process"""
+
+    def __init__(self, serial: str, api_url: str):
+        self.serial = serial
+        self.api_url = api_url
+        self.queue = Queue(maxsize=1000)  # Local queue per process
+        self.batch_size = 10
+        self.flush_interval = 5.0  # seconds
+        self.stop_event = threading.Event()
+
+        # Start background sender thread
+        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
+        self.sender_thread.start()
+
+    def add_log(self, log_entry: dict):
+        """Add log entry to local queue (non-blocking)"""
+        try:
+            self.queue.put_nowait(log_entry)
+        except:
+            # Queue full, try to drop oldest and add new
+            try:
+                self.queue.get_nowait()  # Drop oldest
+                self.queue.put_nowait(log_entry)
+            except:
+                pass  # Both operations failed, skip log
+
+    def _sender_loop(self):
+        """Background thread để batch send logs"""
+        batch = []
+        last_flush = time.time()
+
+        while not self.stop_event.is_set():
+            try:
+                current_time = time.time()
+
+                # Collect items for batch
+                while len(batch) < self.batch_size:
+                    try:
+                        # Non-blocking get with short timeout
+                        item = self.queue.get_nowait()
+                        batch.append(item)
+                    except:
+                        break  # No more items available
+
+                # Check flush conditions
+                is_full = len(batch) >= self.batch_size
+                is_timeout = (current_time - last_flush) >= self.flush_interval
+
+                if batch and (is_full or is_timeout):
+                    self._send_batch(batch)
+                    batch = []  # Reset batch
+                    last_flush = current_time
+
+                # Short sleep để không busy loop
+                time.sleep(0.1)
+
+            except Exception as e:
+                print(f"[LogBatcher] Sender error for {self.serial}: {e}")
+                time.sleep(5)  # Backoff on error
+
+    def _send_batch(self, batch: list):
+        """Send batch của logs đến API"""
+        if not batch:
+            return
+
+        payload = {
+            'serial': self.serial,
+            'logs': batch,
+            'batch_size': len(batch),
+            'timestamp': time.time()
+        }
+
+        try:
+            # Send với timeout
+            resp = requests.post(self.api_url, json=payload, timeout=10)
+
+            if resp.status_code == 200:
+                print(f"[LogBatcher] ✓ Sent {len(batch)} logs for {self.serial}")
+            else:
+                print(f"[LogBatcher] ✗ API error {resp.status_code} for {self.serial}")
+
+        except requests.Timeout:
+            print(f"[LogBatcher] Timeout sending batch for {self.serial}")
+        except Exception as e:
+            print(f"[LogBatcher] Failed to send batch for {self.serial}: {e}")
+
+    def flush_remaining(self):
+        """Flush remaining logs khi shutdown"""
+        print(f"[LogBatcher] Flushing remaining logs for {self.serial}")
+        self.stop_event.set()
+
+        # Collect remaining items
+        remaining = []
+        while True:
+            try:
+                item = self.queue.get_nowait()
+                remaining.append(item)
+            except:
+                break
+
+        if remaining:
+            print(f"[LogBatcher] Sending final {len(remaining)} logs for {self.serial}")
+            self._send_batch(remaining)
 
 def run_collector():
     """Main function to run log collector"""
@@ -50,8 +180,11 @@ def run_collector():
 
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     API_BASE = os.getenv("API_URL", "http://160.25.81.154:9000")
-    API_URL = API_BASE + "/api/v1/report"
-    SEND_INTERVAL = 2.0  # Gửi API mỗi 2 giây
+    API_URL = API_BASE + "/api/v1/ads_statistics/send_log"
+
+    # Initialize local batcher và rate limiter cho process này
+    batcher = LogBatcher(SERIAL, API_URL)
+    rate_limiter = RateLimiter(max_per_minute=30)
 
     # ================== STATS ==================
 
@@ -90,8 +223,22 @@ def run_collector():
 
     is_ended = False
 
+    def create_log_entry(event_type: str, ad_format: str = None, value: float = 0.0, ad_unit_name: str = ""):
+        """Create standardized log entry for batching"""
+        return {
+            "timestamp": time.time(),
+            "event_type": event_type,
+            "ad_format": ad_format,
+            "value": value,
+            "ad_unit_name": ad_unit_name,
+            "start_run": START_RUN,
+            "room_hash": ROOM_HASH,
+            "game_package": GAME_PACKAGE,
+            "raw_line": ""  # Can be populated if needed
+        }
+
     def send_event_to_api(ad_format, value):
-        """Gửi event lên API ngay lập tức"""
+        """Gửi event lên API ngay lập tức (for critical events)"""
         try:
             extra_data = {
                 "start_run": START_RUN,
@@ -209,14 +356,25 @@ def run_collector():
             last_event_time = current_time
             # ---------------------------------------------
 
+            # Create log entry for batching
+            log_entry = create_log_entry("ad_impression", ad_format, value, ad_unit_name)
+
+            # Rate limiting check
+            if not rate_limiter.allow():
+                print(f"[log_data] {SERIAL} Rate limited, skipping log entry")
+                return
+
+            # Add to batcher (non-blocking)
+            batcher.add_log(log_entry)
+
             if ad_format == "BANNER":
                 nonlocal TOTAL_BANNER_REVENUE
                 TOTAL_BANNER_REVENUE += value
                 print(f"[log_data] {SERIAL} ACCUMULATED BANNER: +{value} | Total: {TOTAL_BANNER_REVENUE}", flush=True)
-                # Không gửi API ngay với Banner
+                # Banner events are batched, not sent immediately
             else:
                 print(f"[log_data] {SERIAL} DETECTED AD: {ad_format} | Value: {value}")
-                # Gửi API ngay lập tức với Inter/Rewarded
+                # Critical events (Inter/Rewarded) still sent immediately for real-time processing
                 send_event_to_api(ad_format, value)
 
         except (json.JSONDecodeError, KeyError, TypeError):
@@ -232,6 +390,9 @@ def run_collector():
             for l in lines[:-1]:
                 process_line(l.strip())
     finally:
+        # Flush remaining batched logs before shutdown
+        batcher.flush_remaining()
+
         send_end_session()
         adb.terminate()
         print("ADB process closed")

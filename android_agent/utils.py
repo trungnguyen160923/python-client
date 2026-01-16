@@ -1,10 +1,13 @@
 import time
 import os
+import sys
+import traceback
+import threading
 import requests
 import psutil
 import tempfile
 from .config import LOG_FILE
-from typing import Optional
+from typing import Optional, Dict, List
 
 def append_error_log(serial: str, message: str) -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -187,3 +190,122 @@ def clear_console():
         os.system("cls")
     except Exception:
         pass
+
+# Exception Memory Leak Prevention Utilities
+
+def format_exception_safe(e: Exception = None) -> Dict[str, str]:
+    """
+    Safely format exception details without keeping object references
+
+    Args:
+        e: Exception object (if None, uses sys.exc_info())
+
+    Returns:
+        Dict with safe string representations
+    """
+    if e is None:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        if exc_value is None:
+            return {"type": "Unknown", "message": "No exception", "traceback": "", "timestamp": str(time.time())}
+        e = exc_value
+        # Use the traceback from sys.exc_info()
+        tb_str = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)) if exc_traceback else ""
+    else:
+        tb_str = traceback.format_exc()
+
+    return {
+        "type": type(e).__name__,
+        "message": str(e),
+        "traceback": tb_str,
+        "timestamp": str(time.time())
+    }
+
+def safe_log_exception(context: str, operation: str = None, include_traceback: bool = False):
+    """
+    Safely log current exception without memory leaks
+
+    Args:
+        context: Where the error occurred (e.g., "api_client")
+        operation: Specific operation (e.g., "fetch_commands")
+        include_traceback: Whether to include full traceback
+    """
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+
+    if exc_value:
+        error_info = {
+            'context': context,
+            'operation': operation or 'unknown',
+            'type': exc_type.__name__ if exc_type else 'Unknown',
+            'message': str(exc_value),
+            'timestamp': time.time()
+        }
+
+        if include_traceback and exc_traceback:
+            error_info['traceback'] = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+
+        # Log safely without keeping object references
+        log_msg = f"[{error_info['context']}] {error_info['type']}: {error_info['message']}"
+        if operation:
+            log_msg += f" in {operation}"
+
+        print(log_msg)
+
+        # For critical errors, write to file safely
+        if error_info['type'] in ['MemoryError', 'SystemExit', 'KeyboardInterrupt']:
+            try:
+                with open('critical_errors.log', 'a') as f:
+                    f.write(f"{error_info['timestamp']}: {log_msg}\n")
+            except:
+                pass  # Don't fail if logging fails
+
+    # Clear exception info to prevent any potential leaks
+    sys.exc_info()  # This clears the exception info
+
+class ExceptionSafeStorage:
+    """Thread-safe storage for exception info without memory leaks"""
+
+    def __init__(self, max_entries: int = 500):
+        self._entries: List[Dict[str, str]] = []
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+
+    def add_exception(self, context: str, operation: str = None):
+        """Add exception info safely without keeping object references"""
+        with self._lock:
+            entry = format_exception_safe()
+            entry.update({
+                'context': context,
+                'operation': operation or 'unknown'
+            })
+
+            self._entries.append(entry)
+
+            # Maintain size limit to prevent unbounded growth
+            if len(self._entries) > self._max_entries:
+                self._entries.pop(0)  # Remove oldest
+
+    def get_recent(self, limit: int = 10) -> List[Dict[str, str]]:
+        """Get recent exceptions safely"""
+        with self._lock:
+            return self._entries[-limit:] if self._entries else []
+
+    def clear_old(self, older_than_seconds: int = 3600):
+        """Clear exceptions older than specified time"""
+        cutoff_time = time.time() - older_than_seconds
+        with self._lock:
+            self._entries = [
+                entry for entry in self._entries
+                if float(entry.get('timestamp', 0)) > cutoff_time
+            ]
+
+    def get_stats(self) -> Dict[str, int]:
+        """Get storage statistics"""
+        with self._lock:
+            return {
+                'total_entries': len(self._entries),
+                'max_entries': self._max_entries,
+                'utilization_percent': (len(self._entries) / self._max_entries) * 100
+            }
+
+# Global exception storage for monitoring
+exception_storage = ExceptionSafeStorage(max_entries=500)

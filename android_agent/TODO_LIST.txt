@@ -1,5 +1,5 @@
 # ANDROID_AGENT TODO LIST - Critical Issues & Improvements
-# Generated: January 15, 2026
+# Generated: January 16, 2026
 
 ================================================================================
 PHASE 1: CRITICAL FIXES (Nguy hiểm nhất - Fix ngay)
@@ -51,6 +51,34 @@ PHASE 1: CRITICAL FIXES (Nguy hiểm nhất - Fix ngay)
    Impact: High - Memory leaks in long-running processes
    Priority: HIGH
 
+7. Fix ADB Command Blocking & Server Overload
+   Status: COMPLETED
+   Description: ADB processes bị treo dẫn đến thread pool cạn kiệt. Đã implement cross-platform force kill, ADB server restart với thread synchronization, và health state machine
+   Files: android_agent/adb_service.py, android_agent/log_manager.py
+   Impact: Critical - System hangs when ADB server overloaded
+   Priority: HIGH
+
+8. Fix Resource Leaks on KeyboardInterrupt
+   Status: COMPLETED
+   Description: Đã implement cleanup_all_sessions() và force_stop_game_session() với layered cleanup (signal→terminate→ADB force-stop). Thêm timeout protection và comprehensive logging
+   Files: android_agent/main.py, android_agent/session_manager.py
+   Impact: Critical - Zombie processes after force shutdown
+   Priority: HIGH
+
+9. Fix Memory Accumulation in Commands Queue
+   Status: COMPLETED
+   Description: Đã implement maxlen=1000, batch locking optimization, overflow protection với logging, và queue monitoring. Ngăn OOM crash và cung cấp full observability
+   Files: android_agent/main.py (commands deque + fetch logic), android_agent/config.py (queue config)
+   Impact: High - OOM crash in long-running processes
+   Priority: HIGH
+
+10. Fix Log Collector Zombie Processes
+    Status: COMPLETED
+    Description: Đã implement Defense in Depth với 4-level escalation (graceful→group kill→force kill→OS kill). Cross-platform support, zombie detection, comprehensive logging
+    Files: android_agent/log_manager.py (enhanced stop_collectors + force_kill functions)
+    Impact: High - Resource leaks, ADB server starvation
+    Priority: HIGH
+
 ================================================================================
 PHASE 2: STABILITY IMPROVEMENTS (Tăng độ ổn định)
 ================================================================================
@@ -76,29 +104,71 @@ PHASE 2: STABILITY IMPROVEMENTS (Tăng độ ổn định)
    Impact: Medium - Resource leaks, temp file accumulation
    Priority: MEDIUM
 
+10. Fix File Handle Leaks with Context Managers
+    Status: COMPLETED
+    Description: Đã thay thế manual open/close bằng context manager với append mode. Thêm restart markers để preserve crash logs. Loại bỏ manual cleanup code
+    Files: android_agent/session_manager.py (enhanced loop with context manager)
+    Impact: Medium - File descriptor leaks, "Too many open files" error
+    Priority: MEDIUM
+
+11. Add Network Resilience & Timeout Handling
+    Status: COMPLETED
+    Description: Đã implement production-grade resilience với Circuit Breaker, jittered backoff, dynamic timeouts, smart error classification, và unified API client
+    Files: android_agent/api_client.py (complete rewrite with resilience patterns)
+    Impact: High - Command loss during network issues
+    Priority: MEDIUM
+
+12. Fix Process Group Management
+    Status: COMPLETED
+    Description: Đã implement kill_process_group_safe với suicide prevention, process tree cleanup, cross-platform support, và zombie detection
+    Files: android_agent/log_manager.py (enhanced process group management)
+    Impact: Medium - Incomplete process cleanup
+    Priority: MEDIUM
+
+13. Add System Health Monitoring
+    Status: COMPLETED
+    Description: Đã implement comprehensive health monitoring với psutil, state machine (HEALTHY→WARNING→CRITICAL→EMERGENCY), configurable thresholds, metrics history, diagnostic reports, và alerting system
+    Files: android_agent/health.py (new module), android_agent/config.py (thresholds), android_agent/main.py (integration + shutdown reports)
+    Impact: Medium - Proactive detection of system degradation
+    Priority: MEDIUM
+
 ================================================================================
 PHASE 3: PERFORMANCE & MONITORING (Tối ưu hiệu năng)
 ================================================================================
 
-10. Add Process Health Monitoring
+14. Add Process Health Monitoring
     Status: COMPLETED
     Description: Monitor ADB processes và log collectors, auto-restart nếu die
     Files: android_agent/log_manager.py, android_agent/adb_service.py
     Impact: Low - Process failures not detected
     Priority: LOW
 
-11. Add Connection Pooling
+15. Add Connection Pooling
     Status: COMPLETED
     Description: Implement requests session reuse để cải thiện performance API calls
     Files: android_agent/api_client.py
     Impact: Low - Performance optimization
     Priority: LOW
 
-12. Add Comprehensive Error Handling
+16. Add Comprehensive Error Handling
     Status: PENDING
     Description: Thêm proper logging và error recovery cho tất cả exception cases
     Files: All files - comprehensive error handling
     Impact: Medium - Better debugging and stability
+    Priority: LOW
+
+17. Fix Exception Object Memory Leaks
+    Status: COMPLETED
+    Description: Đã implement format_exception_safe(), safe_log_exception(), ExceptionSafeStorage class. Refactor exception handlers trong main.py và api_client.py để tránh memory leaks
+    Files: android_agent/utils.py (new exception utilities), android_agent/main.py, android_agent/api_client.py
+    Impact: Low - Memory leaks from exception accumulation
+    Priority: LOW
+
+18. Add Race Condition Protection for Log Data
+    Status: COMPLETED
+    Description: Đã implement local batching per process với LogBatcher, RateLimiter, và background batch sender. Ngăn race conditions và API spam
+    Files: android_agent/log_data.py (LogBatcher + RateLimiter classes, integrated batching)
+    Impact: Low - Log data corruption in high concurrency
     Priority: LOW
 
 ================================================================================
@@ -120,6 +190,7 @@ COMPLETED ITEMS
 - Add Process Health Monitoring (Integrated Log Collector Monitoring) - COMPLETED
 - Add Connection Pooling (Global Session với HTTPAdapter) - COMPLETED
 - Fix Process Leak in Session Manager (Polling Loop) - COMPLETED
+- Comprehensive System Degradation Analysis - COMPLETED
 
 ================================================================================
 NOTES
@@ -130,3 +201,5 @@ NOTES
 - All fixes should include proper error handling and logging
 - Test thoroughly with multiple devices after each fix
 - Consider backward compatibility for all changes
+- New critical issues added: ADB blocking, resource leaks, memory accumulation
+- Focus on Phase 1 fixes first to prevent system degradation over time

@@ -478,3 +478,6 @@ java.lang.SecurityException: Injecting input events requires the caller (or the 
 2026-01-15 20:14:49   ce02160265ac7d2004   :   adb.exe: device 'ce02160265ac7d2004' not found
 2026-01-15 20:14:49   ce011601ca2b952604   :   adb.exe: device 'ce011601ca2b952604' not found
 2026-01-15 20:14:49   ce02171272041ce70c   :   adb.exe: device 'ce02171272041ce70c' not found
+2026-01-16 07:57:04   ZDPN457HG67DIFN7   :   adb.exe: device 'ZDPN457HG67DIFN7' not found
+2026-01-16 07:57:45   RFCWA172XFK   :   adb.exe: device 'RFCWA172XFK' not found
+2026-01-16 07:57:45   RS4HU8XW4HY9FE4X   :   adb.exe: device 'RS4HU8XW4HY9FE4X' not found

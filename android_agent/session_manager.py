@@ -119,20 +119,25 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
 
         while not stop_evt.is_set() and not session["stop_flag"].is_set():
             proc = None
-            log_file = None
             is_stable_run = False  # Flag to track if this run was stable
 
             try:
-                # Open log file for stdout redirection (prevents pipe deadlock)
-                log_file = open(log_file_path, "w", encoding="utf-8")
+                # [FIX ITEM 10] Context manager with APPEND mode to preserve crash logs
+                with open(log_file_path, "a", encoding="utf-8") as log_file:
 
-                # Start process with file redirection
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=log_file,           # Direct to file (no PIPE deadlock)
-                    stderr=subprocess.STDOUT,  # Merge stderr to stdout
-                    text=True
-                )
+                    # Add restart marker for debugging (preserves crash history)
+                    if restart_count > 0:
+                        separator = f"\n{'='*50} RESTARTING SESSION (Attempt {restart_count}) {'='*50}\n"
+                        log_file.write(separator)
+                        log_file.flush()  # Ensure marker is written immediately
+
+                    # Start process with file redirection
+                    proc = subprocess.Popen(
+                        cmd,
+                        stdout=log_file,           # Direct to file (no PIPE deadlock)
+                        stderr=subprocess.STDOUT,  # Merge stderr to stdout
+                        text=True
+                    )
 
                 with game_sessions_lock:
                     session["process"] = proc
@@ -216,12 +221,7 @@ def handle_start_game(serial: str, command_text: str, room_hash: str, command_id
 
             finally:
                 # CRITICAL: Always cleanup resources to prevent leaks
-                if log_file:
-                    try:
-                        log_file.close()
-                    except Exception as e:
-                        print(f"[Cleanup] Error closing log file for {serial}: {e}")
-
+                # [FIXED ITEM 10] File handle auto-cleaned by context manager, only cleanup process
                 terminate_process_safely(proc)
 
                 with game_sessions_lock:

@@ -1,0 +1,161 @@
+{
+  "timestamp": 1768524987.8672938,
+  "current_state": "emergency",
+  "alert_count": 1,
+  "metrics_history": [
+    {
+      "timestamp": 1768524957.8613625,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 99.4,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6690.609375,
+      "system_memory_percent": 72.4
+    },
+    {
+      "timestamp": 1768524961.1392436,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 99.4,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6645.16015625,
+      "system_memory_percent": 72.6
+    },
+    {
+      "timestamp": 1768524964.381273,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.3,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6668.57421875,
+      "system_memory_percent": 72.5
+    },
+    {
+      "timestamp": 1768524967.6290584,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.3,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6626.6796875,
+      "system_memory_percent": 72.7
+    },
+    {
+      "timestamp": 1768524970.9096816,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.0,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6351.4921875,
+      "system_memory_percent": 73.8
+    },
+    {
+      "timestamp": 1768524974.1879888,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 99.4,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6385.44140625,
+      "system_memory_percent": 73.7
+    },
+    {
+      "timestamp": 1768524977.4688485,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.3,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6341.55859375,
+      "system_memory_percent": 73.9
+    },
+    {
+      "timestamp": 1768524980.7566638,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.3,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6418.01171875,
+      "system_memory_percent": 73.5
+    },
+    {
+      "timestamp": 1768524983.9999409,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 100.3,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6342.6953125,
+      "system_memory_percent": 73.9
+    },
+    {
+      "timestamp": 1768524987.28665,
+      "thread_count": 6,
+      "memory_rss_mb": 33.70703125,
+      "memory_vms_mb": 21.7109375,
+      "cpu_percent": 86.0,
+      "open_files": 1,
+      "connections": 2,
+      "system_memory_total_mb": 24260.7109375,
+      "system_memory_available_mb": 6279.25,
+      "system_memory_percent": 74.1
+    }
+  ],
+  "thresholds": {
+    "max_threads": 100,
+    "max_memory_mb": 512,
+    "memory_threshold_pct": 20.0,
+    "cpu_threshold_pct": 80.0,
+    "queue_critical_pct": 95.0,
+    "max_zombie_procs": 5
+  },
+  "deep_check": {
+    "agent_info": {
+      "active_threads": 1,
+      "python_version": "3.12.4",
+      "platform": "win32"
+    },
+    "process_info": {
+      "pid": 14180,
+      "threads": 2,
+      "open_files": 1,
+      "connections": 2,
+      "cpu_times": [
+        161.390625,
+        11.734375,
+        0.0,
+        0.0
+      ]
+    },
+    "system_info": {
+      "memory_total": 24260.7109375,
+      "memory_available": 6292.0,
+      "memory_percent": 74.1,
+      "cpu_count": 16,
+      "cpu_freq_current": 2002.0
+    }
+  }
+}

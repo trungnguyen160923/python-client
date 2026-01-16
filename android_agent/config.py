@@ -8,6 +8,17 @@ PRINT_INTERVAL_SEC = 1.0
 STATUS_INTERVAL_SEC = 3.0
 CLEAR_INTERVAL_SEC = 120.0
 
+# Queue configuration to prevent memory accumulation
+MAX_COMMANDS_QUEUE_SIZE = 1000
+QUEUE_WARNING_THRESHOLD = 0.8  # 80% capacity warning
+
+# System Health Monitoring Configuration
+MAX_MEMORY_MB = 512
+MAX_THREADS = 100
+MEMORY_THRESHOLD_PCT = 20.0  # Alert when >20% system RAM
+CPU_THRESHOLD_PCT = 80.0
+HEALTH_CHECK_INTERVAL = 3.0
+
 def load_room_hash() -> str:
     if CONFIG_FILE.exists():
         saved = CONFIG_FILE.read_text(encoding="utf-8").strip()

@@ -2,14 +2,20 @@ import threading
 import time
 import collections
 import multiprocessing
+import subprocess
 import sys
 from typing import Dict, List, Deque, Optional
-from android_agent.config import load_room_hash, REPORT_INTERVAL_SEC, FETCH_INTERVAL_SEC, PRINT_INTERVAL_SEC, STATUS_INTERVAL_SEC, CLEAR_INTERVAL_SEC
-from android_agent.utils import append_error_log, clear_console, cleanup_old_logs, cleanup_temp_files, cleanup_lock_files
+from android_agent.config import load_room_hash, REPORT_INTERVAL_SEC, FETCH_INTERVAL_SEC, PRINT_INTERVAL_SEC, STATUS_INTERVAL_SEC, CLEAR_INTERVAL_SEC, MAX_COMMANDS_QUEUE_SIZE, QUEUE_WARNING_THRESHOLD
+from android_agent.utils import (
+    append_error_log, clear_console, cleanup_old_logs, cleanup_temp_files, cleanup_lock_files,
+    safe_log_exception, format_exception_safe, exception_storage
+)
 from android_agent.api_client import report_devices, fetch_commands, report_command_result
-from android_agent.adb_service import list_adb_devices
+from android_agent.adb_service import list_adb_devices, run_adb_once
 from android_agent.command_processor import run_adb_sequence
-from android_agent.session_manager import handle_start_game, handle_stop_game
+from android_agent.session_manager import handle_start_game, handle_stop_game, unregister_session
+from android_agent.log_manager import stop_collectors
+from android_agent.health import start_comprehensive_health_monitor, export_health_report
 from android_agent import log_data
 
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC):
@@ -46,10 +52,34 @@ def start_command_fetcher(room_hash_value: str, commands: Deque[Dict[str, object
                         "meta": meta,
                     })
                 if simplified:
-                    print("[fetch] room=", room_hash_value, " commands=", len(simplified), " serials=", [d.get("serial") for d in simplified])
+                    print(f"[fetch] room={room_hash_value} commands={len(simplified)} serials={[d.get('serial') for d in simplified]}")
+
+                    # [OPTIMIZATION] Batch locking với overflow protection
                     with commands_lock:
-                        # [FIX] Always queue new commands - eliminate Head-of-Line Blocking
-                        commands.extend(simplified)
+                        current_size = len(commands)
+                        max_size = commands.maxlen or MAX_COMMANDS_QUEUE_SIZE
+
+                        # Warning Threshold Check (Check 1 lần trước khi add batch)
+                        if current_size >= max_size * QUEUE_WARNING_THRESHOLD:
+                            utilization = current_size / max_size * 100
+                            print(f"⚠️  Commands queue high usage: {current_size}/{max_size} ({utilization:.1f}%)")
+
+                        # Process batch with overflow protection
+                        dropped_count = 0
+                        for cmd in simplified:
+                            # Overflow Protection Logic
+                            if len(commands) >= max_size:
+                                # Phải pop tay để lấy thông tin log
+                                dropped = commands.popleft()
+                                dropped_serial = dropped.get('serial', 'unknown')
+                                dropped_count += 1
+                                # Chỉ print warning, hạn chế ghi file log quá nhiều nếu spam
+                                print(f"🚨 Queue FULL! Dropped cmd for {dropped_serial}")
+
+                            commands.append(cmd)
+
+                        if dropped_count > 0:
+                            print(f"🚨 Dropped {dropped_count} commands due to queue overflow")
             except Exception as exc:
                 print(f"[fetch err] {exc}")
             stop_signal.wait(interval)
@@ -227,7 +257,136 @@ def start_command_printer(commands: Deque[Dict[str, object]], commands_lock: thr
                 stop_signal.wait(interval)
     threading.Thread(target=print_loop, daemon=True).start()
 
-def start_status_monitor(stop_signal: threading.Event, game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock, interval: float = STATUS_INTERVAL_SEC):
+def force_stop_game_session(serial: str, session: Dict[str, object],
+                          room_hash: str, timeout: float) -> bool:
+    """
+    Force stop một game session với comprehensive cleanup
+
+    Returns:
+        bool: True nếu cleanup thành công
+    """
+    try:
+        # 1. Stop log collectors
+        log_procs = session.get("log_procs") or {}
+        if log_procs:
+            print(f"[Cleanup] Stopping log collectors for {serial}...")
+            stop_collectors(log_procs)
+
+        # 2. Signal game thread to stop
+        stop_evt = session.get("stop")
+        stop_flag = session.get("stop_flag")
+
+        if stop_evt:
+            stop_evt.set()
+        if stop_flag:
+            stop_flag.set()
+
+        # 3. Wait for thread với timeout
+        thread = session.get("thread")
+        if thread and thread.is_alive():
+            print(f"[Cleanup] Waiting for game thread {serial}...")
+            thread.join(timeout=timeout)
+
+            if thread.is_alive():
+                print(f"[Cleanup] Thread {serial} still alive after timeout, may become zombie")
+                return False
+
+        # 4. Force kill game process
+        proc = session.get("process")
+        if proc and proc.poll() is None:
+            print(f"[Cleanup] Force killing game process {serial} (PID: {proc.pid})...")
+
+            # Try graceful terminate first
+            try:
+                proc.terminate()
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                # Force kill nếu terminate không work
+                try:
+                    proc.kill()
+                    proc.wait(timeout=1.0)
+                except Exception:
+                    safe_log_exception("session_cleanup", "process_kill")
+                    exception_storage.add_exception("session_cleanup", "process_kill")
+                    return False
+
+        # 5. Run ADB force-stop command
+        try:
+            force_stop_cmd = "shell am force-stop nat.myc.test"
+            result = run_adb_once(serial, force_stop_cmd)
+            if result.get("code") != 0:
+                print(f"[Cleanup] Warning: ADB force-stop failed for {serial}")
+        except Exception:
+            safe_log_exception("session_cleanup", f"adb_force_stop_{serial}")
+            exception_storage.add_exception("session_cleanup", f"adb_force_stop_{serial}")
+
+        return True
+
+    except Exception:
+        safe_log_exception("session_cleanup", f"cleanup_{serial}")
+        exception_storage.add_exception("session_cleanup", f"cleanup_{serial}")
+        return False
+
+def cleanup_all_sessions(game_sessions: Dict[str, Dict[str, object]],
+                        game_sessions_lock: threading.Lock,
+                        room_hash: str,
+                        timeout_per_session: float = 5.0) -> Dict[str, bool]:
+    """
+    Synchronous cleanup tất cả game sessions với timeout
+
+    Args:
+        game_sessions: Dict of active sessions
+        game_sessions_lock: Threading lock for sessions
+        room_hash: Current room hash
+        timeout_per_session: Timeout cho mỗi session cleanup
+
+    Returns:
+        Dict[serial, success]: Cleanup result cho mỗi device
+    """
+    results = {}
+
+    # Get snapshot của tất cả sessions để tránh modify dict while iterating
+    with game_sessions_lock:
+        sessions_to_cleanup = dict(game_sessions)  # Copy
+
+    if not sessions_to_cleanup:
+        print("[Cleanup] No active sessions to cleanup")
+        return results
+
+    print(f"[Cleanup] Starting cleanup for {len(sessions_to_cleanup)} sessions...")
+
+    # Cleanup từng session synchronous
+    for serial, session in sessions_to_cleanup.items():
+        try:
+            print(f"[Cleanup] Cleaning up session for {serial}...")
+
+            # Force stop game với timeout
+            success = force_stop_game_session(serial, session, room_hash, timeout_per_session)
+            results[serial] = success
+
+            if success:
+                print(f"[Cleanup] ✓ Successfully cleaned up {serial}")
+            else:
+                print(f"[Cleanup] ✗ Failed to cleanup {serial} (timeout or error)")
+
+        except Exception:
+            safe_log_exception("cleanup_all_sessions", f"cleanup_{serial}")
+            exception_storage.add_exception("cleanup_all_sessions", f"cleanup_{serial}")
+            results[serial] = False
+
+        # Remove from session registry after cleanup attempt
+        with game_sessions_lock:
+            game_sessions.pop(serial, None)
+
+        # Unregister from global registry
+        unregister_session(serial)
+
+    successful_count = sum(1 for success in results.values() if success)
+    print(f"[Cleanup] Completed: {successful_count}/{len(results)} sessions cleaned up")
+
+    return results
+
+def start_status_monitor(stop_signal: threading.Event, game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock, commands: Deque[Dict[str, object]], commands_lock: threading.Lock, interval: float = STATUS_INTERVAL_SEC):
     def monitor_loop():
         zombie_warning_threshold = 50  # Alert if >50 threads (potential zombies)
         while not stop_signal.is_set():
@@ -238,7 +397,19 @@ def start_status_monitor(stop_signal: threading.Event, game_sessions: Dict[str, 
             if thread_count > zombie_warning_threshold:
                 print(f"[CRITICAL] High thread count: {thread_count} - possible zombie threads!")
 
-            print(f"[STATUS] threads={thread_count} processes={proc_count}")
+            # Queue Monitoring
+            # Không cần lock ở đây nếu chỉ đọc len() (deque.len() là thread-safe trong CPython),
+            # nhưng lock cũng không sao vì tần suất thấp.
+            with commands_lock:  # Safe to avoid race conditions
+                q_len = len(commands)
+                q_max = commands.maxlen or MAX_COMMANDS_QUEUE_SIZE
+
+                if q_len > 0:
+                    util_pct = (q_len / q_max) * 100
+                    if util_pct >= (QUEUE_WARNING_THRESHOLD * 100):
+                        print(f"[WARN] Queue Utilization: {util_pct:.1f}% ({q_len}/{q_max})")
+
+            print(f"[STATUS] threads={thread_count} processes={proc_count} queue={q_len}")
             stop_signal.wait(interval)
     threading.Thread(target=monitor_loop, daemon=True).start()
 
@@ -260,7 +431,7 @@ def main():
     cleanup_old_logs(days=3)
     cleanup_temp_files(older_than_hours=24)
     cleanup_lock_files()
-    commands: Deque[Dict[str, object]] = collections.deque()
+    commands: Deque[Dict[str, object]] = collections.deque(maxlen=MAX_COMMANDS_QUEUE_SIZE)
     commands_lock = threading.Lock()
     stop_event = threading.Event()
     game_sessions: Dict[str, Dict[str, object]] = {}
@@ -268,15 +439,50 @@ def main():
     start_reporter(room_hash, stop_event)
     start_command_fetcher(room_hash, commands, commands_lock, stop_event)
     start_command_printer(commands, commands_lock, stop_event, game_sessions, game_sessions_lock)
-    start_status_monitor(stop_event, game_sessions, game_sessions_lock)
+    health_monitor = start_comprehensive_health_monitor(
+        stop_event, game_sessions, game_sessions_lock, commands, commands_lock
+    )
     start_console_clearer(stop_event)
     print("Background threads running. Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping...")
+        print("\n🛑 KeyboardInterrupt received - Starting graceful shutdown...")
+
+        # Signal tất cả background threads to stop
         stop_event.set()
+
+        # CRITICAL: Cleanup tất cả game sessions trước khi exit
+        print("🧹 Cleaning up game sessions...")
+        cleanup_results = cleanup_all_sessions(
+            game_sessions,
+            game_sessions_lock,
+            room_hash,
+            timeout_per_session=5.0  # 5 seconds per device
+        )
+
+        # Report cleanup results
+        if cleanup_results:
+            successful = sum(1 for success in cleanup_results.values() if success)
+            total = len(cleanup_results)
+            print(f"🧹 Session cleanup: {successful}/{total} successful")
+
+            if successful < total:
+                failed_devices = [serial for serial, success in cleanup_results.items() if not success]
+                print(f"⚠️  Warning: Failed to cleanup devices: {failed_devices}")
+                print("   These devices may have zombie processes - manual cleanup may be needed")
+
+        # Export final health report for diagnostics
+        try:
+            report_file = export_health_report(health_monitor)
+            if report_file:
+                print(f"📊 Health report exported to: {report_file}")
+        except Exception:
+            safe_log_exception("shutdown", "health_report_export")
+            exception_storage.add_exception("shutdown", "health_report_export")
+
+        print("✅ Shutdown complete - Exiting...")
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()  # Bắt buộc cho PyInstaller trên Windows

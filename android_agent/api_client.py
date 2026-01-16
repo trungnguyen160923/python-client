@@ -1,13 +1,16 @@
 
 import requests
-from requests.adapters import HTTPAdapter
 import time
-from typing import List, Dict
-from .adb_service import list_adb_devices
-from .config import REPORT_INTERVAL_SEC
+import random  # For jitter in backoff
+import sys
 import os
+from typing import Dict, List, Optional
+from requests.adapters import HTTPAdapter
 from dotenv import load_dotenv
+from .adb_service import list_adb_devices
+from .utils import safe_log_exception, exception_storage
 
+# Load environment configuration
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 API_BASE_URL = os.getenv("API_BASE_URL", "http://160.25.81.154:9000")
 
@@ -25,8 +28,204 @@ adapter = HTTPAdapter(
 session.mount('http://', adapter)
 session.mount('https://', adapter)
 
+class CircuitBreaker:
+    """Circuit breaker for API resilience - prevents cascade failures"""
+
+    def __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.failure_count = 0
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.last_failure_time = 0
+        self.state = 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
+
+    def should_attempt(self) -> bool:
+        """Check if request should be attempted based on circuit state"""
+        current_time = time.time()
+
+        if self.state == 'CLOSED':
+            return True
+        elif self.state == 'OPEN':
+            # Check if recovery timeout has passed
+            if current_time - self.last_failure_time > self.recovery_timeout:
+                self.state = 'HALF_OPEN'
+                print("[API] Circuit breaker transitioning to HALF_OPEN")
+                return True
+            return False
+        else:  # HALF_OPEN
+            return True
+
+    def record_success(self):
+        """Record successful request - reset circuit"""
+        self.failure_count = 0
+        if self.state != 'CLOSED':
+            print("[API] Circuit breaker resetting to CLOSED")
+        self.state = 'CLOSED'
+
+    def record_failure(self):
+        """Record failed request - potentially open circuit"""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+
+        if self.failure_count >= self.failure_threshold:
+            if self.state != 'OPEN':
+                print(f"[API] Circuit breaker OPENING after {self.failure_count} failures")
+            self.state = 'OPEN'
+
+# Global circuit breaker instance
+api_circuit_breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=60)
+
+def get_dynamic_timeout(operation: str) -> float:
+    """Dynamic timeout based on operation type and expected duration"""
+    timeouts = {
+        'report_devices': 3.0,      # Quick status report
+        'fetch_commands': 30.0,     # Long polling - need longer timeout!
+        'report_result': 10.0,      # Critical data - longer timeout
+        'start_session': 8.0,       # Session initialization
+        'default': 5.0
+    }
+    return timeouts.get(operation, timeouts['default'])
+
+def calculate_backoff_delay(attempt: int, base_delay: float = 1.0, max_delay: float = 30.0) -> float:
+    """Calculate exponential backoff delay with jitter to prevent thundering herd"""
+    # Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s...
+    delay = min(base_delay * (2 ** attempt), max_delay)
+
+    # Add ±25% jitter to distribute load when multiple clients recover simultaneously
+    jitter_range = delay * 0.25
+    jitter = random.uniform(-jitter_range, jitter_range)
+
+    return max(0.1, delay + jitter)  # Minimum 100ms delay
+
+def classify_error_for_retry(response: requests.Response = None, exception: Exception = None) -> tuple[bool, str]:
+    """
+    Classify error for smart retry decisions following HTTP semantics
+
+    Returns:
+        (should_retry: bool, reason: str)
+    """
+    if response:
+        status_code = response.status_code
+
+        # Success codes
+        if status_code in (200, 201, 202):
+            return False, "success"
+
+        # Client errors (4xx) - don't retry (except rate limiting)
+        elif 400 <= status_code < 500:
+            if status_code == 429:  # Rate limited - special case, can retry
+                return True, "rate_limited"
+            reasons = {
+                401: "authentication_error",
+                403: "authorization_error",
+                404: "not_found",
+                422: "validation_error"
+            }
+            return False, reasons.get(status_code, "client_error")
+
+        # Server errors (5xx) - retry
+        elif status_code >= 500:
+            reasons = {
+                500: "internal_server_error",
+                502: "bad_gateway",
+                503: "service_unavailable",
+                504: "gateway_timeout"
+            }
+            return True, reasons.get(status_code, "server_error")
+
+    elif exception:
+        # Network/timeout errors - retry
+        if isinstance(exception, requests.Timeout):
+            return True, "timeout"
+        elif isinstance(exception, requests.ConnectionError):
+            return True, "connection_error"
+        elif isinstance(exception, requests.RequestException):
+            return True, "request_error"
+
+    return False, "unknown"
+
+def api_request_with_resilience(method: str, url: str, operation: str,
+                               json_data=None, max_retries=3, serial_context="") -> Optional[requests.Response]:
+    """
+    Unified API client with production-grade resilience patterns
+
+    Args:
+        method: HTTP method ('GET', 'POST')
+        url: API endpoint URL
+        operation: Operation name for logging/metrics ('fetch_commands', 'report_result', etc.)
+        json_data: JSON payload for POST requests
+        max_retries: Maximum retry attempts
+        serial_context: Device serial for contextual logging
+
+    Returns:
+        requests.Response on success, None on permanent failure
+    """
+    # Check circuit breaker first
+    if not api_circuit_breaker.should_attempt():
+        print(f"[API] Circuit breaker OPEN, skipping {operation}")
+        return None
+
+    timeout = get_dynamic_timeout(operation)
+    context = f" for {serial_context}" if serial_context else ""
+
+    for attempt in range(max_retries + 1):
+        try:
+            start_time = time.time()
+
+            # Make request with appropriate method
+            if method.upper() == 'GET':
+                resp = session.get(url, timeout=timeout)
+            elif method.upper() == 'POST':
+                resp = session.post(url, json=json_data, timeout=timeout)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+
+            duration = time.time() - start_time
+
+            # Classify response for retry decision
+            should_retry, reason = classify_error_for_retry(response=resp)
+
+            if not should_retry:
+                # Final outcome - success or permanent failure
+                if resp.status_code in (200, 201, 202):
+                    api_circuit_breaker.record_success()
+                    # Success logging removed to reduce console noise
+                    return resp
+                else:
+                    api_circuit_breaker.record_failure()
+                    print(f"[API] ✗ {operation}{context} failed ({reason}) in {duration:.2f}s")
+                    return resp
+
+            # Should retry - calculate backoff and wait
+            if attempt < max_retries:
+                delay = calculate_backoff_delay(attempt)
+                print(f"[API] {operation}{context} {reason}, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries + 1})")
+                time.sleep(delay)
+            else:
+                # All retries exhausted
+                api_circuit_breaker.record_failure()
+                print(f"[API] {operation}{context} failed permanently after {max_retries + 1} attempts")
+                return resp
+
+        except Exception:
+            # Network or other exceptions - safe handling without keeping references
+            should_retry, reason = classify_error_for_retry(exception=sys.exc_info()[1])
+
+            if should_retry and attempt < max_retries:
+                delay = calculate_backoff_delay(attempt)
+                print(f"[API] {operation}{context} {reason}, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries + 1})")
+                time.sleep(delay)
+            else:
+                api_circuit_breaker.record_failure()
+                safe_log_exception("api_client", operation)
+                exception_storage.add_exception("api_client", operation)
+                return None
+
+    return None
+
+# Public API functions using unified resilient client
+
 def report_devices(room_hash_value: str):
-    """Report devices with retry logic (fire-and-forget)"""
+    """Report devices with full network resilience"""
     url = f"{API_BASE_URL}/api/v1/report-devices"
     devices = list_adb_devices()
     payload = {
@@ -34,101 +233,28 @@ def report_devices(room_hash_value: str):
         "devices": devices,
     }
 
-    max_retries = 3
-    for attempt in range(max_retries + 1):
-        try:
-            resp = session.post(url, json=payload, timeout=5)
-
-            if resp.status_code in (200, 201):
-                return  # Success
-            elif resp.status_code >= 500:  # Server errors - retry
-                if attempt < max_retries:
-                    delay = 1 * (2 ** attempt)  # Exponential: 1s, 2s, 4s
-                    print(f"[report] Server error {resp.status_code}, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1})")
-                    time.sleep(delay)
-                    continue
-                else:
-                    print(f"[report] Server error {resp.status_code} after {max_retries + 1} attempts")
-                    return
-            else:  # Client errors (4xx) - don't retry
-                print(f"[report] Client error {resp.status_code}, not retrying")
-                return
-
-        except (requests.RequestException, requests.Timeout) as e:
-            if attempt < max_retries:
-                delay = 1 * (2 ** attempt)
-                print(f"[report] Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1}): {e}")
-                time.sleep(delay)
-            else:
-                print(f"[report] Network error after {max_retries + 1} attempts: {e}")
-                return
+    resp = api_request_with_resilience('POST', url, 'report_devices', json_data=payload)
+    return resp is not None and resp.status_code in (200, 201)
 
 def fetch_commands(room_hash_value: str) -> List[Dict[str, object]]:
-    """Fetch commands with retry logic"""
+    """Fetch commands with full network resilience (supports long polling)"""
     url = f"{API_BASE_URL}/api/v1/subscribe/{room_hash_value}"
-    max_retries = 3
 
-    for attempt in range(max_retries + 1):
+    resp = api_request_with_resilience('GET', url, 'fetch_commands')
+    if resp and resp.status_code == 200:
         try:
-            resp = session.get(url, timeout=5)
-
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("commands") or []
-            elif resp.status_code >= 500:  # Server errors - retry
-                if attempt < max_retries:
-                    delay = 1 * (2 ** attempt)  # Exponential: 1s, 2s, 4s
-                    print(f"[fetch] Server error {resp.status_code}, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1})")
-                    time.sleep(delay)
-                    continue
-                else:
-                    print(f"[fetch] Server error {resp.status_code} after {max_retries + 1} attempts")
-                    return []
-            else:  # Client errors (4xx) - don't retry
-                print(f"[fetch] Client error {resp.status_code}, not retrying")
-                return []
-
-        except (requests.RequestException, requests.Timeout) as e:
-            if attempt < max_retries:
-                delay = 1 * (2 ** attempt)
-                print(f"[fetch] Network error, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1}): {e}")
-                time.sleep(delay)
-            else:
-                print(f"[fetch] Network error after {max_retries + 1} attempts: {e}")
-                return []
-
-    return []  # Fallback (should not reach here)
+            data = resp.json()
+            return data.get("commands") or []
+        except ValueError as e:
+            print(f"[API] Failed to parse fetch_commands response as JSON: {e}")
+            return []
+    return []
 
 def report_command_result(payload: dict):
-    """Report command result with retry logic"""
+    """Report command result with full network resilience"""
     url = f"{API_BASE_URL}/api/v1/report-result"
     serial = payload.get('serial', 'unknown')
-    max_retries = 3
 
-    for attempt in range(max_retries + 1):
-        try:
-            resp = session.post(url, json=payload, timeout=5)
-
-            if resp.status_code in (200, 201):
-                return  # Success
-            elif resp.status_code >= 500:  # Server errors - retry
-                if attempt < max_retries:
-                    delay = 1 * (2 ** attempt)  # Exponential: 1s, 2s, 4s
-                    print(f"[report-result] Server error {resp.status_code} for {serial}, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1})")
-                    time.sleep(delay)
-                    continue
-                else:
-                    print(f"[report-result] Server error {resp.status_code} for {serial} after {max_retries + 1} attempts")
-                    return
-            else:  # Client errors (4xx) - don't retry
-                print(f"[report-result] Client error {resp.status_code} for {serial}, not retrying")
-                return
-
-        except (requests.RequestException, requests.Timeout) as e:
-            if attempt < max_retries:
-                delay = 1 * (2 ** attempt)
-                print(f"[report-result] Network error for {serial}, retrying in {delay}s (attempt {attempt + 1}/{max_retries + 1}): {e}")
-                time.sleep(delay)
-            else:
-                print(f"[report-result] Network error for {serial} after {max_retries + 1} attempts: {e}")
-                return
+    resp = api_request_with_resilience('POST', url, 'report_result',
+                                     json_data=payload, serial_context=serial)
+    return resp is not None and resp.status_code in (200, 201)
