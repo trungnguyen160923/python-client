@@ -183,14 +183,27 @@ def run_collector():
     # ==========================================
     # Lấy thời gian hiện tại để logcat bắt từ đó
     def get_logcat_time():
-        now = datetime.now()
-        now = datetime.now() - timedelta(minutes=2) 
-        MM = str(now.month).zfill(2)
-        DD = str(now.day).zfill(2)
-        HH = str(now.hour).zfill(2)
-        mm = str(now.minute).zfill(2)
-        ss = str(now.second).zfill(2)
-        return f"{MM}-{DD} {HH}:{mm}:{ss}.000"
+        try:
+            # [FIX] Lấy thời gian thực tế hiển thị trên điện thoại (Wall Clock)
+            # Format: YYYYmmddHHMMSS (Ví dụ: 20260116173000)
+            cmd = ["adb", "-s", SERIAL, "shell", "date +%Y%m%d%H%M%S"]
+            # Dùng timeout ngắn để tránh treo
+            output = subprocess.check_output(cmd, timeout=5, text=True).strip()
+            
+            # Parse thành object datetime (Giờ của điện thoại)
+            device_now = datetime.strptime(output, "%Y%m%d%H%M%S")
+            
+            # Trừ lùi 2 phút từ giờ của điện thoại
+            start_time_dt = device_now - timedelta(minutes=2)
+            
+            # Format theo chuẩn logcat: MM-DD HH:mm:ss.000
+            return start_time_dt.strftime("%m-%d %H:%M:%S.000")
+            
+        except Exception as e:
+            print(f"[log_data] Failed to sync time with device: {e}. Fallback to PC time.", flush=True)
+            # Fallback: Dùng giờ PC nếu không lấy được giờ điện thoại
+            now = datetime.now() - timedelta(minutes=2)
+            return now.strftime("%m-%d %H:%M:%S.000")
 
 
     start_time = get_logcat_time()
