@@ -180,7 +180,7 @@ def run_collector():
 
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     API_BASE = os.getenv("API_URL", "http://160.25.81.154:9000")
-    API_URL = API_BASE + "/api/v1/ads_statistics/send_log"
+    API_URL = API_BASE + "/api/v1/report"
 
     # Initialize local batcher và rate limiter cho process này
     batcher = LogBatcher(SERIAL, API_URL)
