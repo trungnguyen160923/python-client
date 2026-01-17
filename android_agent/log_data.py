@@ -166,7 +166,13 @@ def run_collector():
         sys.exit(0)
     # ===========================================================
 
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+    if getattr(sys, 'frozen', False):
+        # Nếu là EXE, tìm .env cùng thư mục với file EXE
+        env_path = os.path.join(os.path.dirname(sys.executable), ".env")
+    else:
+        env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+
+    load_dotenv(env_path)
     API_BASE_URL = os.getenv("API_BASE_URL")
     API_URL = API_BASE_URL  + "/api/v1/report"
 

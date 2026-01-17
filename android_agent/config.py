@@ -1,7 +1,31 @@
 from pathlib import Path
+import sys
+import os
+from dotenv import load_dotenv
 
-CONFIG_FILE = Path(__file__).parent.parent / "config.txt"
-LOG_FILE = Path(__file__).parent.parent / "log_error.txt"
+if getattr(sys, 'frozen', False):
+    # Nếu đang chạy file EXE, lấy đường dẫn của file EXE
+    BASE_DIR = Path(sys.executable).parent
+else:
+    # Nếu đang chạy code Python, lấy đường dẫn thư mục gốc project
+    BASE_DIR = Path(__file__).parent.parent
+
+# Load file .env ngay khi config được import để main.py có thể đọc được API_BASE_URL
+env_path = BASE_DIR / ".env"
+print(f"[CONFIG] Checking .env at: {env_path}", flush=True)
+
+if env_path.exists():
+    load_dotenv(env_path)
+    api_url = os.getenv("API_BASE_URL")
+    if api_url:
+        print(f"[CONFIG] Loaded API_BASE_URL: {api_url}", flush=True)
+    else:
+        print(f"[CONFIG] ⚠️ Found .env but API_BASE_URL is missing or empty", flush=True)
+else:
+    print(f"[CONFIG] ❌ .env file NOT FOUND at {env_path}", flush=True)
+
+CONFIG_FILE = BASE_DIR / "config.txt"
+LOG_FILE = BASE_DIR / "log_error.txt"
 REPORT_INTERVAL_SEC = 3.0
 FETCH_INTERVAL_SEC = 1.0
 PRINT_INTERVAL_SEC = 1.0
