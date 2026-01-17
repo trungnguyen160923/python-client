@@ -15,7 +15,6 @@ from android_agent.adb_service import list_adb_devices, run_adb_once
 from android_agent.command_processor import run_adb_sequence
 from android_agent.session_manager import handle_start_game, handle_stop_game, unregister_session
 from android_agent.log_manager import stop_collectors
-from android_agent.health import start_comprehensive_health_monitor, export_health_report
 from android_agent import log_data
 
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC):
@@ -409,7 +408,7 @@ def start_status_monitor(stop_signal: threading.Event, game_sessions: Dict[str, 
                     if util_pct >= (QUEUE_WARNING_THRESHOLD * 100):
                         print(f"[WARN] Queue Utilization: {util_pct:.1f}% ({q_len}/{q_max})")
 
-            print(f"[STATUS] threads={thread_count} processes={proc_count} queue={q_len}")
+            print(f"[STATUS] Threads: {thread_count} | Processes: {proc_count} | Queue: {q_len}")
             stop_signal.wait(interval)
     threading.Thread(target=monitor_loop, daemon=True).start()
 
@@ -439,9 +438,7 @@ def main():
     start_reporter(room_hash, stop_event)
     start_command_fetcher(room_hash, commands, commands_lock, stop_event)
     start_command_printer(commands, commands_lock, stop_event, game_sessions, game_sessions_lock)
-    health_monitor = start_comprehensive_health_monitor(
-        stop_event, game_sessions, game_sessions_lock, commands, commands_lock
-    )
+    start_status_monitor(stop_event, game_sessions, game_sessions_lock, commands, commands_lock)
     start_console_clearer(stop_event)
     print("Background threads running. Press Ctrl+C to stop.")
     try:
@@ -472,15 +469,6 @@ def main():
                 failed_devices = [serial for serial, success in cleanup_results.items() if not success]
                 print(f"⚠️  Warning: Failed to cleanup devices: {failed_devices}")
                 print("   These devices may have zombie processes - manual cleanup may be needed")
-
-        # Export final health report for diagnostics
-        try:
-            report_file = export_health_report(health_monitor)
-            if report_file:
-                print(f"📊 Health report exported to: {report_file}")
-        except Exception:
-            safe_log_exception("shutdown", "health_report_export")
-            exception_storage.add_exception("shutdown", "health_report_export")
 
         print("✅ Shutdown complete - Exiting...")
 
