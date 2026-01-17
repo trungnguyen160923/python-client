@@ -386,27 +386,27 @@ def handle_stop_game(serial: str, command_text: str, room_hash: str, command_id:
 
         # Unregister from global registry
         unregister_session(serial)
-        _ = run_adb_once(serial, command_text)
-        check_cmd = f"shell pidof nat.myc.test"
-        res = run_adb_once(serial, check_cmd)
-        code = res.get("code", -1)
-        stdout = str(res.get("stdout", ""))
-        stderr = str(res.get("stderr", ""))
-        if (code != 0) or (not stdout.strip()):
-            report_command_result({
-                "room_hash": room_hash,
-                "serial": serial,
-                "command_id": int(command_id) if command_id is not None else 0,
-                "success": True,
-                "output": stdout,
-                "meta": meta,
-            })
-        else:
-            report_command_result({
-                "room_hash": room_hash,
-                "serial": serial,
-                "command_id": int(command_id) if command_id is not None else 0,
-                "success": False,
-                "output": stderr or "Game process still running after stop command",
-                "meta": meta,
-            })
+    _ = run_adb_once(serial, command_text)
+    check_cmd = f"shell pidof nat.myc.test"
+    res = run_adb_once(serial, check_cmd)
+    code = res.get("code", -1)
+    stdout = str(res.get("stdout", ""))
+    stderr = str(res.get("stderr", ""))
+    if (code != 0) or (not stdout.strip()):
+        report_command_result({
+            "room_hash": room_hash,
+            "serial": serial,
+            "command_id": int(command_id) if command_id is not None else 0,
+            "success": True,
+            "output": stdout,
+            "meta": meta,
+        })
+    else:
+        report_command_result({
+            "room_hash": room_hash,
+            "serial": serial,
+            "command_id": int(command_id) if command_id is not None else 0,
+            "success": False,
+            "output": stderr or "Game process still running after stop command",
+            "meta": meta,
+        })
