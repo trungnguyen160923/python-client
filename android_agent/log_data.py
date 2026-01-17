@@ -326,15 +326,9 @@ def run_collector():
         signal.signal(signal.SIGBREAK, signal_handler)
 
     def process_line(line):
-        # Debug: In ra nếu dòng log có chứa từ khóa quan trọng để kiểm tra xem có bị lọc sai không
-        if "ad_impression" in line or "Start sending" in line:
-            print(f"[log_data DEBUG] {SERIAL} Found keyword: {line}", flush=True)
-
         # Chỉ xử lý dòng log chứa event gửi đi từ Unity/Game
         if "Start sending event to main app:" not in line:
             return
-
-        print(f"[log_data] {SERIAL} RAW EVENT: {line}")
 
         if "ad_impression" not in line:
             return
