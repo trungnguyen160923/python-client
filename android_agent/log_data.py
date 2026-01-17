@@ -167,8 +167,15 @@ def run_collector():
     # ===========================================================
 
     if getattr(sys, 'frozen', False):
-        # Nếu là EXE, tìm .env cùng thư mục với file EXE
-        env_path = os.path.join(os.path.dirname(sys.executable), ".env")
+        # [FIX] Ưu tiên load .env từ bên trong file EXE (sys._MEIPASS)
+        if hasattr(sys, '_MEIPASS'):
+            env_path = os.path.join(sys._MEIPASS, ".env")
+        else:
+            env_path = os.path.join(os.path.dirname(sys.executable), ".env")
+            
+        # Fallback: Nếu không có trong bundle, tìm bên cạnh EXE
+        if not os.path.exists(env_path):
+            env_path = os.path.join(os.path.dirname(sys.executable), ".env")
     else:
         env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
 

@@ -6,12 +6,21 @@ from dotenv import load_dotenv
 if getattr(sys, 'frozen', False):
     # Nếu đang chạy file EXE, lấy đường dẫn của file EXE
     BASE_DIR = Path(sys.executable).parent
+    
+    # [FIX] Ưu tiên load .env từ bên trong file EXE (sys._MEIPASS)
+    if hasattr(sys, '_MEIPASS'):
+        env_path = Path(sys._MEIPASS) / ".env"
+    else:
+        env_path = BASE_DIR / ".env"
+        
+    # Fallback: Nếu không có trong bundle, tìm bên cạnh EXE
+    if not env_path.exists():
+        env_path = BASE_DIR / ".env"
 else:
     # Nếu đang chạy code Python, lấy đường dẫn thư mục gốc project
     BASE_DIR = Path(__file__).parent.parent
+    env_path = BASE_DIR / ".env"
 
-# Load file .env ngay khi config được import để main.py có thể đọc được API_BASE_URL
-env_path = BASE_DIR / ".env"
 print(f"[CONFIG] Checking .env at: {env_path}", flush=True)
 
 if env_path.exists():

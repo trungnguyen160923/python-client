@@ -11,7 +11,19 @@ from .adb_service import list_adb_devices
 from .utils import safe_log_exception, exception_storage
 
 # Load environment configuration
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
+if getattr(sys, 'frozen', False):
+    # [FIX] Ưu tiên load .env từ bên trong file EXE (sys._MEIPASS)
+    if hasattr(sys, '_MEIPASS'):
+        env_path = os.path.join(sys._MEIPASS, ".env")
+    else:
+        env_path = os.path.join(os.path.dirname(sys.executable), ".env")
+    
+    if not os.path.exists(env_path):
+        env_path = os.path.join(os.path.dirname(sys.executable), ".env")
+else:
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+
+load_dotenv(env_path)
 API_BASE_URL = os.getenv("API_BASE_URL")
 
 # Global session with connection pooling (thread-safe module-level initialization)
