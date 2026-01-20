@@ -339,15 +339,19 @@ def run_collector():
 
         try:
             obj = json.loads(match.group(1))
-            events = obj.get("events") or []
+            # Support both standard 'events' and obfuscated 'bwz' keys
+            events = obj.get("events") or obj.get("bwz") or []
             if not events:
                 return
 
             event = events[0]
-            if not event or event.get("name") != "ad_impression":
+            # Support both standard 'name' and obfuscated 'bxa' keys
+            event_name = event.get("name") or event.get("bxa")
+            if not event or event_name != "ad_impression":
                 return
 
-            p = event.get("params", {})
+            # Support both standard 'params' and obfuscated 'bxb' keys
+            p = event.get("params") or event.get("bxb") or {}
             value = float(p.get("value") or 0)
             ad_format = p.get("ad_format")
             ad_unit_name = p.get("ad_unit_name", "")
