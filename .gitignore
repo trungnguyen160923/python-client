@@ -6,3 +6,5 @@ dist/
 *.egg-info/
 logs/
 config.txt
+log_errors.txt
+.vscode/
