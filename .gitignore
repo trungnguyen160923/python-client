@@ -1,8 +1,10 @@
 .env
-android_agent/_pycache__/
-__pycache__/
-build/
-dist/
-*.egg-info/
-logs/
 config.txt
+__pycache__/
+logs/
+dist/
+.venv/
+/build/
+*.pyc
+log_errors.txt
+*.log

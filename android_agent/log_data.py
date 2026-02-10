@@ -252,8 +252,13 @@ def run_collector():
             "raw_line": ""  # Can be populated if needed
         }
 
-    def send_event_to_api(ad_format, value):
-        """Gửi event lên API ngay lập tức (for critical events)"""
+    def send_event_to_api(ad_format, value, extra_overrides: dict | None = None):
+        """Gửi event lên API ngay lập tức (for critical events).
+
+        ad_format: "INTER" | "REWARDED" | "BANNER"
+        value:    số tiền/điểm sẽ map vào đúng trường tương ứng.
+        extra_overrides: cho phép bổ sung thêm field vào extra_data (vd: point, vipPoint, adType...).
+        """
         try:
             extra_data = {
                 "start_run": START_RUN,
@@ -262,6 +267,13 @@ def run_collector():
                 "rewarded": value if ad_format == "REWARDED" else 0.0,
                 "banner": value if ad_format == "BANNER" else 0.0,
             }
+
+            if extra_overrides:
+                try:
+                    extra_data.update(extra_overrides)
+                except Exception:
+                    # Không để lỗi nhỏ ở phần merge extra_data làm crash cả process
+                    pass
 
             final_payload = {
                 "room_hash": ROOM_HASH,
@@ -326,7 +338,79 @@ def run_collector():
         signal.signal(signal.SIGBREAK, signal_handler)
 
     def process_line(line):
-        # Chỉ xử lý dòng log chứa event gửi đi từ Unity/Game
+        nonlocal last_event_signature, last_event_time, TOTAL_BANNER_REVENUE
+
+        # =====================
+        # 1) Log JSON WATCHAD
+        # =====================
+        # Ví dụ:
+        # 2026-02-10 10:18:19.356   840-985   Unity  ...  I  {"adType":"WATCHAD","point":25,"vipPoint":0}
+        if '"adType":"WATCHAD"' in line:
+            match = re.search(r"(\{.*\})", line)
+            if not match:
+                return
+
+            try:
+                obj = json.loads(match.group(1))
+                ad_type = obj.get("adType") or obj.get("ad_type")
+                if ad_type != "WATCHAD":
+                    return
+
+                # Lấy point & vipPoint, mặc định 0 nếu không có
+                try:
+                    point = float(obj.get("point") or 0)
+                except (TypeError, ValueError):
+                    point = 0.0
+
+                try:
+                    vip_point = float(obj.get("vipPoint") or 0)
+                except (TypeError, ValueError):
+                    vip_point = 0.0
+
+                current_time = time.time()
+                event_signature = ("WATCHAD", point, vip_point)
+
+                # Chống trùng trong vòng 5s với cùng point/vipPoint
+                if event_signature == last_event_signature and (current_time - last_event_time) < 5.0:
+                    print(f"[log_data] {SERIAL} Duplicate WATCHAD event detected, skipping: {event_signature}", flush=True)
+                    return
+
+                last_event_signature = event_signature
+                last_event_time = current_time
+
+                # Rate limiting chung cho toàn process
+                if not rate_limiter.allow():
+                    print(f"[log_data] {SERIAL} Rate limited, skipping WATCHAD event")
+                    return
+
+                # Map point sang Rewarded money cho Ads Statistics
+                # -> FE & backend sẽ nhìn như Rewarded ads với value = point
+                print(
+                    f"[log_data] {SERIAL} DETECTED WATCHAD | Point: {point} | VIP Point: {vip_point}",
+                    flush=True,
+                )
+
+                extra_overrides = {
+                    "adType": ad_type,
+                    "point": point,
+                    "vipPoint": vip_point,
+                }
+
+                # Theo yêu cầu: nếu có point thì chỉ gửi point,
+                # không dùng rewarded nữa (rewarded = 0).
+                # Do send_event_to_api map inter/rewarded/banner theo ad_format,
+                # ta truyền ad_format="POINT" và value=0 để tất cả = 0.
+                send_event_to_api("POINT", 0.0, extra_overrides=extra_overrides)
+
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                print(f"[log_data] {SERIAL} Failed to parse WATCHAD log: {e}", flush=True)
+
+            return
+
+        # ======================================================
+        # 2) Log Unity Analytics cũ: "Start sending event... ad_impression"
+        # ======================================================
+        # Chỉ xử lý dòng log chứa event gửi đi từ Unity/Game (kiểu cũ)
         if "Start sending event to main app:" not in line:
             return
 
@@ -357,7 +441,6 @@ def run_collector():
             ad_unit_name = p.get("ad_unit_name", "")
 
             # --- Deduplication Logic (Chống trùng lặp) ---
-            nonlocal last_event_signature, last_event_time
             current_time = time.time()
             event_signature = (ad_format, value, ad_unit_name)
 
@@ -370,7 +453,7 @@ def run_collector():
             last_event_time = current_time
             # ---------------------------------------------
 
-            # Create log entry for batching
+            # Create log entry for batching (hiện tại chưa dùng queue)
             log_entry = create_log_entry("ad_impression", ad_format, value, ad_unit_name)
 
             # Rate limiting check
@@ -379,14 +462,15 @@ def run_collector():
                 return
 
             if ad_format == "BANNER":
-                nonlocal TOTAL_BANNER_REVENUE
                 TOTAL_BANNER_REVENUE += value
-                print(f"[log_data] {SERIAL} ACCUMULATED BANNER: +{value} | Total: {TOTAL_BANNER_REVENUE}", flush=True)
+                print(
+                    f"[log_data] {SERIAL} ACCUMULATED BANNER: +{value} | Total: {TOTAL_BANNER_REVENUE}",
+                    flush=True,
+                )
                 # Banner events are batched, not sent immediately
             else:
-                # Add to batcher (non-blocking) only for non-banner logs if needed, or remove completely if handled by send_event_to_api
+                # Critical events (Inter/Rewarded) vẫn gửi ngay để xử lý real-time
                 print(f"[log_data] {SERIAL} DETECTED AD: {ad_format} | Value: {value}")
-                # Critical events (Inter/Rewarded) still sent immediately for real-time processing
                 send_event_to_api(ad_format, value)
 
         except (json.JSONDecodeError, KeyError, TypeError):

@@ -426,9 +426,10 @@ def main():
     print(f"Room hash: {room_hash}")
 
     # Comprehensive startup cleanup (prevent resource accumulation)
+    # NOTE: Do NOT delete arbitrary files in the working directory.
+    # Only clean old log files and stale lock files.
     print("[Init] Cleaning up stale resources...")
     cleanup_old_logs(days=3)
-    cleanup_temp_files(older_than_hours=24)
     cleanup_lock_files()
     commands: Deque[Dict[str, object]] = collections.deque(maxlen=MAX_COMMANDS_QUEUE_SIZE)
     commands_lock = threading.Lock()

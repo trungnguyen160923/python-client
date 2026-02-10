@@ -1,0 +1,5 @@
+2026-02-10 11:17:01   adb-RFCWA172XFK-f5omTE._adb-tls-connect._tcp   :   Installation sequence failed with rollback.
+2026-02-10 11:17:07   adb-RFCWA172XFK-f5omTE._adb-tls-connect._tcp   :   Installation sequence failed with rollback.
+2026-02-10 11:18:29   RFCWA172XFK   :   Installation sequence failed with rollback.
+2026-02-10 11:21:41   RFCWA172XFK   :   Installation sequence failed with rollback.
+2026-02-10 11:24:01   RFCWA172XFK   :   Installation sequence failed with rollback.
