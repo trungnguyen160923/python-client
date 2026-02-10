@@ -1,5 +1,42 @@
+<<<<<<< HEAD
 2026-02-10 11:17:01   adb-RFCWA172XFK-f5omTE._adb-tls-connect._tcp   :   Installation sequence failed with rollback.
 2026-02-10 11:17:07   adb-RFCWA172XFK-f5omTE._adb-tls-connect._tcp   :   Installation sequence failed with rollback.
 2026-02-10 11:18:29   RFCWA172XFK   :   Installation sequence failed with rollback.
 2026-02-10 11:21:41   RFCWA172XFK   :   Installation sequence failed with rollback.
 2026-02-10 11:24:01   RFCWA172XFK   :   Installation sequence failed with rollback.
+=======
+2026-01-17 20:19:16   e5dd0e31   :   Exception occurred while executing 'keyevent':
+java.lang.SecurityException: Injecting input events requires the caller (or the source of the instrumentation, if any) to have the INJECT_EVENTS permission.
+	at com.android.server.input.InputManagerService.injectInputEventToTarget(InputManagerService.java:925)
+	at android.hardware.input.InputManagerGlobal.injectInputEvent(InputManagerGlobal.java:1217)
+	at android.hardware.input.InputManagerGlobal.injectInputEvent(InputManagerGlobal.java:1227)
+	at com.android.server.input.InputShellCommand.injectKeyEvent(InputShellCommand.java:124)
+	at com.android.server.input.InputShellCommand.sendKeyEvent(InputShellCommand.java:377)
+	at com.android.server.input.InputShellCommand.runKeyEvent(InputShellCommand.java:365)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:253)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3463)
+	at android.os.Binder.shellCommand(Binder.java:1075)
+	at android.os.Binder.onTransact(Binder.java:895)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1372)
+	at android.os.Binder.execTransactInternal(Binder.java:1351)
+	at android.os.Binder.execTransact(Binder.java:1282)
+2026-01-17 20:19:31   e5dd0e31   :   Exception occurred while executing 'keyevent':
+java.lang.SecurityException: Injecting input events requires the caller (or the source of the instrumentation, if any) to have the INJECT_EVENTS permission.
+	at com.android.server.input.InputManagerService.injectInputEventToTarget(InputManagerService.java:925)
+	at android.hardware.input.InputManagerGlobal.injectInputEvent(InputManagerGlobal.java:1217)
+	at android.hardware.input.InputManagerGlobal.injectInputEvent(InputManagerGlobal.java:1227)
+	at com.android.server.input.InputShellCommand.injectKeyEvent(InputShellCommand.java:124)
+	at com.android.server.input.InputShellCommand.sendKeyEvent(InputShellCommand.java:377)
+	at com.android.server.input.InputShellCommand.runKeyEvent(InputShellCommand.java:365)
+	at com.android.server.input.InputShellCommand.onCommand(InputShellCommand.java:253)
+	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+	at android.os.ShellCommand.exec(ShellCommand.java:38)
+	at com.android.server.input.InputManagerService.onShellCommand(InputManagerService.java:3463)
+	at android.os.Binder.shellCommand(Binder.java:1075)
+	at android.os.Binder.onTransact(Binder.java:895)
+	at android.hardware.input.IInputManager$Stub.onTransact(IInputManager.java:1372)
+	at android.os.Binder.execTransactInternal(Binder.java:1351)
+	at android.os.Binder.execTransact(Binder.java:1282)
+>>>>>>> f0b1bcbaa1dc2d940551285eb3a3c916f8352297

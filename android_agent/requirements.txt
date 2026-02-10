@@ -1,0 +1,7 @@
+# requirements.txt for python-client/android_agent
+requests
+httpx
+pydantic
+loguru
+python-dotenv
+psutil

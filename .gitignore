@@ -6,5 +6,6 @@ dist/
 .venv/
 /build/
 *.pyc
-log_errors.txt
+log_error.txt
 *.log
+.vscode/
