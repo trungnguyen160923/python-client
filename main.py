@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional
 import json
@@ -18,6 +19,12 @@ FETCH_INTERVAL_SEC = 1.0
 PRINT_INTERVAL_SEC = 1.0
 STATUS_INTERVAL_SEC = 3.0
 CLEAR_INTERVAL_SEC = 120.0
+
+# UI + device status
+UI_REFRESH_SEC = 5.0
+TEST_LOG_DEVICE_PATH = "/sdcard/test_log.txt"
+GAME_PROCESS_MATCH = "nat.myc"  # check `adb shell ps` output contains this
+GAME_PACKAGE_NAME = "nat.myc.test"  # fast pidof check
 
 
 def load_room_hash() -> str:
@@ -90,18 +97,57 @@ def run_adb_once(serial: str, command_text: str) -> Dict[str, object]:
     }
 
 
+def cleanup_apk_files(apk_files: List[str]) -> None:
+    for file_path in apk_files:
+        try:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
+
+
+def run_adb_with_timeout(serial: str, adb_args: List[str], timeout_sec: float) -> Dict[str, object]:
+    cmd = ["adb", "-s", serial] + adb_args
+    try:
+        # print(f"[adb cmd] {' '.join(cmd)} (timeout={timeout_sec}s)")
+        cp = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+        return {
+            "serial": serial,
+            "code": int(cp.returncode),
+            "stdout": (cp.stdout or "").strip(),
+            "stderr": (cp.stderr or "").strip(),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "serial": serial,
+            "code": 124,
+            "stdout": "",
+            "stderr": f"timeout after {timeout_sec}s",
+        }
+    except Exception as exc:
+        return {
+            "serial": serial,
+            "code": -1,
+            "stdout": "",
+            "stderr": str(exc),
+        }
+
+
 def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
-    """
-    Execute semicolon-separated commands sequentially for the given serial.
-    Stops on first failure and returns aggregated output.
-    """
-# --- HÀM PHỤ TRỢ: Lấy danh sách package name (Tận dụng run_adb_once) ---
+    """Execute semicolon-separated commands sequentially for the given serial."""
+
+    # --- HÀM PHỤ TRỢ: Lấy danh sách package name (Tận dụng run_adb_once) ---
     def get_installed_packages(target_serial: str) -> set:
         res = run_adb_once(target_serial, "shell pm list packages")
         if res.get("code") != 0:
             return set()
-        
-        out = res.get("stdout", "")
+
+        out = str(res.get("stdout", ""))
         packages = set()
         for line in out.splitlines():
             line = line.strip()
@@ -115,170 +161,104 @@ def run_adb_sequence(serial: str, command_text: str) -> Dict[str, object]:
     # =========================================================================
     if command_text.strip().startswith("net-install"):
         parts = shlex.split(command_text)
-        # parts[0] là "net-install", từ parts[1] trở đi là các URL
         urls = parts[1:]
-        
+
         if not urls:
             return {"serial": serial, "code": 1, "stdout": "", "stderr": "No URLs provided"}
 
-        downloaded_files = []        # File APK tạm để xóa sau khi xong
-        downloaded_files = []        # File APK tạm, không xóa ngay
-        # Sử dụng bộ đếm tham chiếu cho mỗi file APK
-        apk_ref_counter = {}
-        installed_packages_list = [] # Các gói ĐÃ CÀI THÀNH CÔNG (để rollback nếu lỗi)
-        install_logs = []
+        downloaded_files: List[str] = []
+        installed_packages_list: List[str] = []
+        install_logs: List[str] = []
         final_code = 0
 
         try:
             for i, url in enumerate(urls):
                 step_num = i + 1
-                
-                # A. Tải file
+
                 local_file = download_temp_file(url)
                 if not local_file:
                     install_logs.append(f"File {step_num}: Download failed ({url})")
                     final_code = 1
-                    break 
-                
-                # B. Đổi tên .apk (ADB bắt buộc phải có đuôi .apk)
+                    break
+
                 if not local_file.lower().endswith(".apk"):
                     new_path = local_file + f"_{i}.apk"
                     try:
                         os.rename(local_file, new_path)
                         local_file = new_path
-                    except OSError: pass
-                
-                downloaded_files.append(local_file)
-                    # Tăng bộ đếm tham chiếu cho file này
-                apk_ref_counter[local_file] = apk_ref_counter.get(local_file, 0) + 1
+                    except OSError:
+                        pass
 
-                # C. [SNAPSHOT 1] Lấy danh sách gói trước khi cài
+                downloaded_files.append(local_file)
+
                 packages_before = get_installed_packages(serial)
 
-                # D. Cài đặt (-r: reinstall/update, -t: test, -g: grant permissions)
                 print(f"[install] Installing {step_num}/{len(urls)}: {local_file}")
-                # install_cmd = f"install -r -t -g '{local_file}'"
-                install_cmd = f"install -r -t '{local_file}'"
+                install_cmd = f"install -r -t \"{local_file}\""
                 result = run_adb_once(serial, install_cmd)
-                
-                stdout = result.get("stdout", "").strip()
-                stderr = result.get("stderr", "").strip()
-                combined_output = f"{stdout} {stderr}"
+
+                stdout = str(result.get("stdout", "")).strip()
+                stderr = str(result.get("stderr", "")).strip()
+                combined_output = f"{stdout} {stderr}".strip()
 
                 if "Success" in combined_output:
-                    print(f"[install] File {step_num} SUCCESS.")
                     install_logs.append(f"File {step_num}: Success ({os.path.basename(url)})")
-                    
-                    # E. [SNAPSHOT 2] So sánh để tìm gói mới
+
                     packages_after = get_installed_packages(serial)
                     new_packages = packages_after - packages_before
-                    
+
                     if new_packages:
-                        # Lấy gói mới nhất vừa xuất hiện
                         pkg_name = list(new_packages)[0]
                         installed_packages_list.append(pkg_name)
-                        print(f"   -> Detected new package: {pkg_name}")
-                    else:
-                        print("   -> No new package detected (Likely updated existing app)")
                 else:
-                    # F. LỖI -> KÍCH HOẠT ROLLBACK
-                    print(f"[install] File {step_num} FAILED. Error: {combined_output}")
                     install_logs.append(f"File {step_num}: FAILED - {combined_output}")
                     install_logs.append("!!! TRIGGERING ROLLBACK (Uninstalling previous apps) !!!")
-                    
                     final_code = 1
-                    
-                    # --- LOGIC ROLLBACK ---
-                    # Gỡ bỏ các app đã cài thành công trước đó trong chuỗi này
+
                     for pkg in reversed(installed_packages_list):
-                        print(f"[rollback] Uninstalling {pkg}...")
                         uninstall_res = run_adb_once(serial, f"uninstall {pkg}")
                         if str(uninstall_res.get("code")) == "0":
                             install_logs.append(f"Rollback: Uninstalled {pkg} (Success)")
                         else:
                             install_logs.append(f"Rollback: Uninstalled {pkg} (Failed)")
-                    
-                    break # Dừng vòng lặp ngay lập tức
+                    break
 
             return {
                 "serial": serial,
                 "code": final_code,
                 "stdout": "\n".join(install_logs),
-                "stderr": "" if final_code == 0 else "Installation sequence failed with rollback."
+                "stderr": "" if final_code == 0 else "Installation sequence failed with rollback.",
             }
 
         finally:
-            # G. Cleanup file APK (Luôn xóa file rác)
-            # KHÔNG xóa file ở đây nữa!
-            # Cleanup file APK sẽ thực hiện ở bước tổng sau khi tất cả các máy đã cài xong
-            # Sử dụng hàm cleanup_apk_files để thực hiện xóa file khi không còn máy nào cần
-            # (Hàm này sẽ được gọi ở ngoài luồng worker khi tất cả các thiết bị đã hoàn thành)
-            pass
-# Hàm cleanup_apk_files: Xóa file APK khi không còn máy nào cần
-def cleanup_apk_files(apk_files: List[str]):
-    for f in apk_files:
-        try:
-            if os.path.exists(f):
-                os.remove(f)
-        except Exception:
-            pass
-    """
-    Chạy cài đặt cho tất cả các thiết bị, chỉ xóa file APK sau khi tất cả đã hoàn thành.
-    """
-    threads = []
-    results = []
-    # Lưu lại các file APK đã dùng
-    all_apk_files = set()
-    def worker(serial):
-        res = run_adb_sequence(serial, command_text)
-        # Thu thập file APK đã dùng
-        if "net-install" in command_text:
-            parts = shlex.split(command_text)
-            urls = parts[1:]
-            for i, url in enumerate(urls):
-                filename = url.split("/")[-1] or f"temp_file_{i}.apk"
-                if not filename.lower().endswith(".apk"):
-                    filename += f"_{i}.apk"
-                # File sẽ nằm cùng thư mục với script
-                local_path = str(Path(__file__).with_name(filename))
-                all_apk_files.add(local_path)
-        results.append(res)
-    for serial in device_serials:
-        t = threading.Thread(target=worker, args=(serial,))
-        threads.append(t)
-        t.start()
-    for t in threads:
-        t.join()
-    # Sau khi tất cả đã xong, xóa file APK
-    cleanup_apk_files(list(all_apk_files))
-    return results
+            cleanup_apk_files(downloaded_files)
 
-    # --- XỬ LÝ LỆNH ĐẶC BIỆT: net-push ---
+    # =========================================================================
+    # 2. XỬ LÝ LỆNH: net-push
     # Cú pháp: net-push <URL> <DESTINATION_PATH>
+    # =========================================================================
     if command_text.strip().startswith("net-push"):
         parts = shlex.split(command_text)
-        if len(parts) >= 3:
-            url = parts[1]
-            dest = parts[2]
-            local_file = download_temp_file(url)
-            
-            if local_file:
-                # Chuyển đổi thành lệnh adb push thông thường
-                # Thêm dấu nháy đơn để shlex xử lý đúng đường dẫn Windows (tránh lỗi mất dấu \)
-                push_cmd = f"push '{local_file}' '{dest}'"
-                result = run_adb_once(serial, push_cmd)
-                
-                # (Tùy chọn) Xóa file sau khi push xong để tiết kiệm ổ cứng
-                # try:
-                #     os.remove(local_file)
-                # except: pass
-                
-                return result
-            else:
-                return {"serial": serial, "code": 1, "stdout": "", "stderr": "Failed to download file from URL"}
+        if len(parts) < 3:
+            return {"serial": serial, "code": 1, "stdout": "", "stderr": "Usage: net-push <URL> <DESTINATION_PATH>"}
 
+        url = parts[1]
+        dest = parts[2]
+        local_file = download_temp_file(url)
+        if not local_file:
+            return {"serial": serial, "code": 1, "stdout": "", "stderr": "Failed to download file from URL"}
+
+        try:
+            push_cmd = f"push \"{local_file}\" \"{dest}\""
+            return run_adb_once(serial, push_cmd)
+        finally:
+            cleanup_apk_files([local_file])
+
+    # =========================================================================
+    # 3. Lệnh thường: hỗ trợ chuỗi "cmd1; cmd2; cmd3"
+    # =========================================================================
     steps = [step.strip() for step in command_text.split(";") if step.strip()]
- 
+
     if not steps:
         return run_adb_once(serial, command_text)
 
@@ -343,12 +323,196 @@ def list_adb_devices() -> List[Dict[str, object]]:
     return devices
 
 
+def _summarize_log_text(text: str, max_chars: int = 220) -> str:
+    if not text:
+        return ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    last_lines = lines[-3:]
+    summary = " | ".join(last_lines)
+    if len(summary) > max_chars:
+        summary = summary[-max_chars:]
+    return summary
+
+
+def _device_is_running_game(serial: str) -> bool:
+    # Fast path: pidof for known package
+    res = run_adb_with_timeout(serial, ["shell", "pidof", GAME_PACKAGE_NAME], timeout_sec=2.0)
+    if res.get("code") == 0 and str(res.get("stdout", "")).strip():
+        return True
+
+    # Spec: check `adb shell ps` output contains nat.myc
+    res = run_adb_with_timeout(serial, ["shell", "ps"], timeout_sec=3.0)
+    if res.get("code") == 0:
+        out = str(res.get("stdout", ""))
+        return GAME_PROCESS_MATCH in out
+    return False
+
+
+def _device_has_root(serial: str) -> bool:
+    """Best-effort root check.
+
+    Returns True when `su -c id` succeeds and indicates uid=0.
+    Uses a short timeout to avoid hanging on su prompts.
+    """
+    # Some devices will block on the first `su` call (waiting for user approval).
+    # In that case `adb shell su -c ...` can hang and hit our timeout, even though
+    # the device *is* rooted. We treat this as a "root-capable" device so we can
+    # attempt root-mode start (which is also guarded by timeouts + throttling).
+    res = run_adb_with_timeout(serial, ["shell", "su", "-c", "id"], timeout_sec=3.0)
+    print(f"[root check] serial={serial} code={res.get('code')} stdout={res.get('stdout')} stderr={res.get('stderr')}")
+    try:
+        code = int(res.get("code", -1))
+    except (TypeError, ValueError):
+        code = -1
+    out = f"{res.get('stdout', '')}\n{res.get('stderr', '')}".lower()
+    if code == 0 and "uid=0" in out:
+        return True
+
+    if code == 124:
+        # Timeout: try to detect if `su` binary exists. If it exists, assume root-capable.
+        which = run_adb_with_timeout(
+            serial,
+            ["shell", "sh", "-c", "command -v su || which su"],
+            timeout_sec=2.0,
+        )
+        try:
+            which_code = int(which.get("code", -1))
+        except (TypeError, ValueError):
+            which_code = -1
+        if which_code == 0 and str(which.get("stdout", "")).strip():
+            return True
+    return False
+
+
+def _build_root_nohup_instrument_su_cmd(command_text: str) -> str:
+    """Convert `shell am instrument ...` to a `su -c` nohup command.
+
+    Keeps all original tokens/params; only wraps with nohup + redirect to TEST_LOG_DEVICE_PATH.
+    """
+    tokens = shlex.split(command_text)
+    if tokens and tokens[0] == "shell":
+        tokens = tokens[1:]
+
+    # Expect tokens to start with: am instrument ...
+    base_cmd = " ".join(shlex.quote(t) for t in tokens)
+    return f"nohup {base_cmd} > {TEST_LOG_DEVICE_PATH} 2>&1 &"
+
+
+def _device_read_test_log(serial: str) -> str:
+    # Prefer tail: avoids lag when file is large.
+    res = run_adb_with_timeout(
+        serial,
+        ["shell", "tail", "-n", "50", TEST_LOG_DEVICE_PATH],
+        timeout_sec=3.0,
+    )
+    if res.get("code") == 0 and str(res.get("stdout", "")).strip():
+        return _summarize_log_text(str(res.get("stdout", "")))
+
+    # Fallback: cat + truncate
+    res = run_adb_with_timeout(serial, ["shell", "cat", TEST_LOG_DEVICE_PATH], timeout_sec=3.0)
+    if res.get("code") == 0 and str(res.get("stdout", "")).strip():
+        text = str(res.get("stdout", ""))
+        if len(text) > 4000:
+            text = text[-4000:]
+        return _summarize_log_text(text)
+
+    err = str(res.get("stderr", "")).strip()
+    return _summarize_log_text(err) or "(no log)"
+
+
+def start_device_ui_monitor(stop_signal: threading.Event, interval: float = UI_REFRESH_SEC) -> bool:
+    """Start smooth terminal UI. Return True if started (rich available)."""
+    try:
+        from rich.console import Console
+        from rich.live import Live
+        from rich.table import Table
+    except Exception:
+        print("[ui] rich not installed. Run: pip install rich")
+        return False
+
+    import builtins
+
+    console = Console()
+    original_print = builtins.print
+
+    def rich_print(*args, **kwargs):
+        # Keep compatibility for uncommon print() usages.
+        if "file" in kwargs or "flush" in kwargs:
+            return original_print(*args, **kwargs)
+        sep = kwargs.get("sep", " ")
+        end = kwargs.get("end", "\n")
+        try:
+            return console.print(*args, sep=sep, end=end)
+        except Exception:
+            return original_print(*args, **kwargs)
+
+    # Make background thread prints play nicely with Live UI.
+    builtins.print = rich_print
+
+    last_snapshot: Dict[str, Dict[str, object]] = {}
+
+    def build_table(serials: List[str]) -> "Table":
+        table = Table(title="Devices", expand=True)
+        table.add_column("STT", justify="right", width=4)
+        table.add_column("serial", no_wrap=True)
+        table.add_column("isRunning", width=10)
+        table.add_column("log")
+
+        for idx, serial in enumerate(serials, start=1):
+            info = last_snapshot.get(serial, {})
+            is_running = bool(info.get("is_running", False))
+            dot = "[green]\u25cf[/green]" if is_running else "[red]\u25cf[/red]"
+            log_text = str(info.get("log", ""))
+            table.add_row(str(idx), serial, dot, log_text)
+        return table
+
+    def query_one(serial: str) -> Dict[str, object]:
+        is_running = _device_is_running_game(serial)
+        log_text = _device_read_test_log(serial)
+        return {"serial": serial, "is_running": is_running, "log": log_text}
+
+    def ui_loop() -> None:
+        with Live(build_table([]), console=console, refresh_per_second=6, transient=False) as live:
+            while not stop_signal.is_set():
+                devices = list_adb_devices()
+                serials = [str(d.get("serial")) for d in devices if d.get("serial")]
+
+                if serials:
+                    max_workers = min(6, max(1, len(serials)))
+                    new_snapshot: Dict[str, Dict[str, object]] = {}
+                    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                        futures = {ex.submit(query_one, s): s for s in serials}
+                        for fut in as_completed(futures):
+                            serial = futures[fut]
+                            try:
+                                new_snapshot[serial] = fut.result(timeout=0)
+                            except Exception as exc:
+                                # Keep previous snapshot if this device is slow/unreachable.
+                                prev = dict(last_snapshot.get(serial, {}))
+                                if not prev:
+                                    prev = {"serial": serial, "is_running": False, "log": f"error: {exc}"}
+                                new_snapshot[serial] = prev
+
+                    last_snapshot.clear()
+                    last_snapshot.update(new_snapshot)
+                else:
+                    last_snapshot.clear()
+
+                live.update(build_table(serials))
+                stop_signal.wait(interval)
+
+    threading.Thread(target=ui_loop, daemon=True).start()
+    return True
+
+
 def start_reporter(room_hash_value: str, stop_signal: threading.Event, interval: float = REPORT_INTERVAL_SEC) -> None:
     """
     Background thread that reports devices every `interval` seconds.
     """
-    # url = "http://160.25.81.154:9000/api/v1/report-devices"
-    url = "http://localhost:9000/api/v1/report-devices"
+    url = "http://160.25.81.154:9000/api/v1/report-devices"
+    # url = "http://localhost:9000/api/v1/report-devices"
 
     def report_loop() -> None:
         while not stop_signal.is_set():
@@ -378,8 +542,8 @@ def start_command_fetcher(
     """
     Background thread to poll subscribe API and store commands (command_text, serial) in a shared list.
     """
-    # url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
-    url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
+    url = f"http://160.25.81.154:9000/api/v1/subscribe/{room_hash_value}"
+    # url = f"http://localhost:9000/api/v1/subscribe/{room_hash_value}"
 
     def fetch_loop() -> None:
         while not stop_signal.is_set():
@@ -464,22 +628,60 @@ def start_command_printer(
             session = {"stop": stop_evt, "stop_flag": stop_flag, "thread": None, "process": None}
             game_sessions[serial] = session
 
-        cmd = ["adb", "-s", serial] + shlex.split(command_text)
+        use_root = _device_has_root(serial)
+        session["use_root"] = use_root
+
+        # Helpful to understand which mode is used when debugging.
+        print(f"[START] serial={serial} use_root={use_root}")
+
+        # Non-root: execute original command normally.
+        cmd_normal = ["adb", "-s", serial] + shlex.split(command_text)
+
+        # Root: run instrumentation in background via su/nohup, writing logs to /sdcard/test_log.txt.
+        su_nohup_cmd = _build_root_nohup_instrument_su_cmd(command_text)
+        # Note: we execute root commands via run_adb_with_timeout to avoid keeping a long-lived adb process.
 
         def loop() -> None:
+            if use_root:
+                # Root mode: start instrumentation in background (nohup + &),
+                # then periodically ensure the game is running.
+                next_attempt_at = 0.0
+                first_attempt = True
+                while not stop_evt.is_set() and not session["stop_flag"].is_set():
+                    if not _device_is_running_game(serial):
+                        now = time.time()
+                        if now >= next_attempt_at:
+                            # First attempt can take longer if device asks for root permission.
+                            timeout_sec = 15.0 if first_attempt else 5.0
+                            first_attempt = False
+                            res = run_adb_with_timeout(
+                                serial,
+                                ["shell", "su", "-c", su_nohup_cmd],
+                                timeout_sec=timeout_sec,
+                            )
+                            # If it fails/timeouts, back off to avoid spawning adb repeatedly.
+                            try:
+                                code = int(res.get("code", -1))
+                            except (TypeError, ValueError):
+                                code = -1
+                            next_attempt_at = now + (10.0 if code != 0 else 2.0)
+                    stop_evt.wait(2)
+                return
+
+            # Non-root mode: keep a persistent adb process (blocks) and auto-restart when it exits.
             while not stop_evt.is_set() and not session["stop_flag"].is_set():
                 proc = None
                 try:
                     proc = subprocess.Popen(
-                        cmd,
+                        cmd_normal,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
                     )
                     with game_sessions_lock:
                         session["process"] = proc
-                    out, err = proc.communicate()
-                    code = proc.returncode
+                    _out, _err = proc.communicate()
+                    _code = proc.returncode
                 except Exception as exc:
                     _ = exc  # ignore logging for start commands
                 finally:
@@ -495,24 +697,18 @@ def start_command_printer(
 
         # Sau khi start, chạy thêm bước verify xem game đã thực sự chạy chưa
         def verify_start() -> None:
-            # Mặc định dùng package nat.myc.test giống pattern phân loại ở dưới
-            package_name = "nat.myc.test"
             time.sleep(5)
-            check_cmd = f"shell pidof {package_name}"
-            res = run_adb_once(serial, check_cmd)
-            # Giữ nguyên exit code thực từ adb; chỉ fallback -1 nếu không có
-            code = res.get("code", -1)
-            stdout = str(res.get("stdout", ""))
-            stderr = str(res.get("stderr", ""))
-            # Thành công thực sự: có pid (stdout không rỗng) và exit code = 0
-            if code == 0 and stdout.strip():
+            # Verify using the same heuristic as the UI monitor to avoid false negatives.
+            is_running = _device_is_running_game(serial)
+            log_tail = _device_read_test_log(serial)
+            if is_running:
                 report_command_result(
                     room_hash=room_hash,
                     serial=serial,
                     command_id=command_id,
                     code=0,
-                    stdout=stdout,
-                    stderr=stderr,
+                    stdout=log_tail,
+                    stderr="",
                     meta=meta,
                 )
             else:
@@ -522,8 +718,8 @@ def start_command_printer(
                     serial=serial,
                     command_id=command_id,
                     code=1,
-                    stdout=stdout,
-                    stderr=stderr or "Game process not found after start command",
+                    stdout=log_tail,
+                    stderr="Game process not found after start command",
                     meta=meta,
                 )
 
@@ -538,6 +734,7 @@ def start_command_printer(
     ) -> None:
         with game_sessions_lock:
             session = game_sessions.get(serial)
+        # If this process has an in-memory session (watchdog thread), stop it first.
         if session:
             stop_evt = session.get("stop")
             if stop_evt:
@@ -546,7 +743,6 @@ def start_command_printer(
             if stop_flag:
                 stop_flag.set()
 
-            # First attempt: stop thread cleanly
             thread = session.get("thread")
             if thread:
                 thread.join(timeout=2)
@@ -564,50 +760,56 @@ def start_command_printer(
                         proc.wait(timeout=2)
                     except Exception:
                         pass
-                
 
-            # Final attempt: join thread again after process kill
             if thread:
                 thread.join(timeout=2)
-
-            thread = session.get("thread")
             if thread:
                 thread.join(timeout=1)
+
             with game_sessions_lock:
-                    game_sessions.pop(serial, None)
+                game_sessions.pop(serial, None)
 
-            # Thực thi lệnh stop chính
-            _ = run_adb_once(serial, command_text)
+        # Always execute stop commands even if there is no session (e.g. client restarted).
+        _ = run_adb_once(serial, command_text)
 
-            # Verify: game đã thật sự dừng chưa (không còn process)
-            package_name = "nat.myc.test"
-            check_cmd = f"shell pidof {package_name}"
-            res = run_adb_once(serial, check_cmd)
-            # Giữ nguyên exit code thực từ adb; chỉ fallback -1 nếu không có
-            code = res.get("code", -1)
-            stdout = str(res.get("stdout", ""))
-            stderr = str(res.get("stderr", ""))
-            # Thành công nghiệp vụ: không còn pid => stdout rỗng hoặc exit code != 0
-            if (code != 0) or (not stdout.strip()):
-                report_command_result(
-                    room_hash=room_hash,
-                    serial=serial,
-                    command_id=command_id,
-                    code=0,
-                    stdout=stdout,
-                    stderr=stderr,
-                    meta=meta,
-                )
-            else:
-                report_command_result(
-                    room_hash=room_hash,
-                    serial=serial,
-                    command_id=command_id,
-                    code=1,
-                    stdout=stdout,
-                    stderr=stderr or "Game process still running after stop command",
-                    meta=meta,
-                )
+        # Best-effort hard-kill to avoid the game/instrumentation staying alive.
+        # Must not require root.
+        try:
+            _ = run_adb_with_timeout(serial, ["shell", "pkill", "-f", "nat.myc.test"], timeout_sec=3.0)
+        except Exception:
+            pass
+        try:
+            _ = run_adb_with_timeout(serial, ["shell", "su", "-c", "pkill -f nat.myc.test"], timeout_sec=3.0)
+        except Exception:
+            pass
+
+        # Verify: game đã thật sự dừng chưa (không còn process)
+        package_name = "nat.myc.test"
+        check_cmd = f"shell pidof {package_name}"
+        res = run_adb_once(serial, check_cmd)
+        code = res.get("code", -1)
+        stdout = str(res.get("stdout", ""))
+        stderr = str(res.get("stderr", ""))
+        if (code != 0) or (not stdout.strip()):
+            report_command_result(
+                room_hash=room_hash,
+                serial=serial,
+                command_id=command_id,
+                code=0,
+                stdout=stdout,
+                stderr=stderr,
+                meta=meta,
+            )
+        else:
+            report_command_result(
+                room_hash=room_hash,
+                serial=serial,
+                command_id=command_id,
+                code=1,
+                stdout=stdout,
+                stderr=stderr or "Game process still running after stop command",
+                meta=meta,
+            )
 
     def report_command_result(
         room_hash: str,
@@ -621,7 +823,8 @@ def start_command_printer(
         """Gửi kết quả thực thi về server để BE/FE biết thiết bị đã chạy xong hay chưa."""
         try:
             print(f"[AGENT] Báo kết quả về BE: serial={serial} command_id={command_id} batch_id={meta.get('batch_id') if meta else None} success={code==0}")
-            url = "http://localhost:9000/api/v1/report-result"
+            # url = "http://localhost:9000/api/v1/report-result"
+            url = "http://160.25.81.154:9000/api/v1/report-result"
             success = code == 0
             output = stderr or stdout or f"exit_code={code}"
             payload = {
@@ -868,11 +1071,15 @@ def main() -> None:
     game_sessions: Dict[str, Dict[str, object]] = {}
     game_sessions_lock = threading.Lock()
 
+    ui_started = start_device_ui_monitor(stop_event, interval=UI_REFRESH_SEC)
+
     start_reporter(room_hash, stop_event)
     start_command_fetcher(room_hash, commands, commands_lock, stop_event)
     start_command_printer(commands, commands_lock, stop_event, game_sessions, game_sessions_lock)
     start_status_monitor(stop_event, game_sessions, game_sessions_lock)
-    start_console_clearer(stop_event)
+    # Rich UI already manages terminal rendering; avoid clearing console to prevent flicker.
+    if not ui_started:
+        start_console_clearer(stop_event)
     print("Background threads running. Press Ctrl+C to stop.")
 
     try:

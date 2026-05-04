@@ -38,8 +38,7 @@ py -3 -m venv .venv
 
 # Cài dependencies
 pip install -r requirements.txt
-# Nếu chưa có requirements.txt, tối thiểu là:
-# pip install requests
+# `rich` dùng để hiển thị UI bảng thiết bị mượt (Live Table).
 
 # Chạy tool
 python main.py
