@@ -25,6 +25,7 @@ UI_REFRESH_SEC = 5.0
 TEST_LOG_DEVICE_PATH = "/sdcard/test_log.txt"
 GAME_PROCESS_MATCH = "nat.myc"  # check `adb shell ps` output contains this
 GAME_PACKAGE_NAME = "nat.myc.test"  # fast pidof check
+FORCE_STOP_PACKAGE = "nat.myc.test"  # package to stop/kill for GUI action
 
 
 def load_room_hash() -> str:
@@ -422,88 +423,191 @@ def _device_read_test_log(serial: str) -> str:
     return _summarize_log_text(err) or "(no log)"
 
 
-def start_device_ui_monitor(stop_signal: threading.Event, interval: float = UI_REFRESH_SEC) -> bool:
-    """Start smooth terminal UI. Return True if started (rich available)."""
+def _force_stop_game_for_serial(serial: str, game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock, command_text: Optional[str] = None) -> Dict[str, object]:
+    """Force stop game on a single device.
+
+    Works even if the client was restarted (no in-memory session).
+    Best-effort: non-root friendly; ignores failures.
+    """
+    # Stop any in-memory watchdog/session first (if present)
+    with game_sessions_lock:
+        session = game_sessions.get(serial)
+
+    if session:
+        try:
+            stop_evt = session.get("stop")
+            if stop_evt:
+                stop_evt.set()
+            stop_flag = session.get("stop_flag")
+            if stop_flag:
+                stop_flag.set()
+
+            thread = session.get("thread")
+            if thread:
+                thread.join(timeout=2)
+
+            proc = session.get("process")
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
+                if proc.poll() is None:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=2)
+                    except Exception:
+                        pass
+
+            if thread:
+                thread.join(timeout=1)
+        finally:
+            with game_sessions_lock:
+                game_sessions.pop(serial, None)
+
+    # Always run stop command(s) on device.
+    stop_cmd = command_text or f"shell am force-stop {FORCE_STOP_PACKAGE}"
+    res_stop = run_adb_once(serial, stop_cmd)
+
+    # Best-effort hard kill (non-root + root)
     try:
-        from rich.console import Console
-        from rich.live import Live
-        from rich.table import Table
+        _ = run_adb_with_timeout(serial, ["shell", "pkill", "-f", FORCE_STOP_PACKAGE], timeout_sec=3.0)
     except Exception:
-        print("[ui] rich not installed. Run: pip install rich")
+        pass
+    try:
+        _ = run_adb_with_timeout(serial, ["shell", "su", "-c", f"pkill -f {FORCE_STOP_PACKAGE}"], timeout_sec=3.0)
+    except Exception:
+        pass
+
+    # Verify
+    res_pid = run_adb_once(serial, f"shell pidof {FORCE_STOP_PACKAGE}")
+    pid_stdout = str(res_pid.get("stdout", "")).strip()
+    ok = (int(res_pid.get("code", -1) or -1) != 0) or (not pid_stdout)
+    return {
+        "serial": serial,
+        "ok": ok,
+        "stop": res_stop,
+        "pidof": res_pid,
+    }
+
+
+def start_device_gui(stop_signal: threading.Event, game_sessions: Dict[str, Dict[str, object]], game_sessions_lock: threading.Lock, interval: float = UI_REFRESH_SEC) -> bool:
+    """Show device status UI using Dear PyGui.
+
+    Runs a GUI loop on the main thread; returns False if Dear PyGui is unavailable.
+    """
+    try:
+        import dearpygui.dearpygui as dpg
+    except Exception:
+        print("[ui] Dear PyGui not installed. Run: pip install dearpygui")
         return False
 
-    import builtins
+    snapshot_lock = threading.Lock()
+    snapshot: Dict[str, Dict[str, object]] = {}
 
-    console = Console()
-    original_print = builtins.print
+    status_lock = threading.Lock()
+    status_message = {"text": "Ready"}
 
-    def rich_print(*args, **kwargs):
-        # Keep compatibility for uncommon print() usages.
-        if "file" in kwargs or "flush" in kwargs:
-            return original_print(*args, **kwargs)
-        sep = kwargs.get("sep", " ")
-        end = kwargs.get("end", "\n")
-        try:
-            return console.print(*args, sep=sep, end=end)
-        except Exception:
-            return original_print(*args, **kwargs)
-
-    # Make background thread prints play nicely with Live UI.
-    builtins.print = rich_print
-
-    last_snapshot: Dict[str, Dict[str, object]] = {}
-
-    def build_table(serials: List[str]) -> "Table":
-        table = Table(title="Devices", expand=True)
-        table.add_column("STT", justify="right", width=4)
-        table.add_column("serial", no_wrap=True)
-        table.add_column("isRunning", width=10)
-        table.add_column("log")
-
-        for idx, serial in enumerate(serials, start=1):
-            info = last_snapshot.get(serial, {})
-            is_running = bool(info.get("is_running", False))
-            dot = "[green]\u25cf[/green]" if is_running else "[red]\u25cf[/red]"
-            log_text = str(info.get("log", ""))
-            table.add_row(str(idx), serial, dot, log_text)
-        return table
+    def set_status(text: str) -> None:
+        with status_lock:
+            status_message["text"] = text
 
     def query_one(serial: str) -> Dict[str, object]:
         is_running = _device_is_running_game(serial)
         log_text = _device_read_test_log(serial)
         return {"serial": serial, "is_running": is_running, "log": log_text}
 
-    def ui_loop() -> None:
-        with Live(build_table([]), console=console, refresh_per_second=6, transient=False) as live:
-            while not stop_signal.is_set():
-                devices = list_adb_devices()
-                serials = [str(d.get("serial")) for d in devices if d.get("serial")]
+    def snapshot_loop() -> None:
+        while not stop_signal.is_set():
+            devices = list_adb_devices()
+            serials = [str(d.get("serial")) for d in devices if d.get("serial")]
+            new_snapshot: Dict[str, Dict[str, object]] = {}
+            if serials:
+                max_workers = min(6, max(1, len(serials)))
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    futures = {ex.submit(query_one, s): s for s in serials}
+                    for fut in as_completed(futures):
+                        serial = futures[fut]
+                        try:
+                            new_snapshot[serial] = fut.result(timeout=0)
+                        except Exception as exc:
+                            new_snapshot[serial] = {"serial": serial, "is_running": False, "log": f"error: {exc}"}
+            with snapshot_lock:
+                snapshot.clear()
+                snapshot.update(new_snapshot)
+            stop_signal.wait(interval)
 
-                if serials:
-                    max_workers = min(6, max(1, len(serials)))
-                    new_snapshot: Dict[str, Dict[str, object]] = {}
-                    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                        futures = {ex.submit(query_one, s): s for s in serials}
-                        for fut in as_completed(futures):
-                            serial = futures[fut]
-                            try:
-                                new_snapshot[serial] = fut.result(timeout=0)
-                            except Exception as exc:
-                                # Keep previous snapshot if this device is slow/unreachable.
-                                prev = dict(last_snapshot.get(serial, {}))
-                                if not prev:
-                                    prev = {"serial": serial, "is_running": False, "log": f"error: {exc}"}
-                                new_snapshot[serial] = prev
+    def on_force_stop(sender, app_data, user_data):
+        serial = str(user_data)
+        set_status(f"Force stopping {serial}...")
 
-                    last_snapshot.clear()
-                    last_snapshot.update(new_snapshot)
-                else:
-                    last_snapshot.clear()
+        def worker():
+            result = _force_stop_game_for_serial(serial, game_sessions, game_sessions_lock)
+            ok = bool(result.get("ok"))
+            set_status(f"Force stop {serial}: {'OK' if ok else 'FAILED'}")
 
-                live.update(build_table(serials))
-                stop_signal.wait(interval)
+        threading.Thread(target=worker, daemon=True).start()
 
-    threading.Thread(target=ui_loop, daemon=True).start()
+    dpg.create_context()
+    dpg.create_viewport(title="Android Devices", width=980, height=520)
+    dpg.setup_dearpygui()
+
+    with dpg.window(tag="__main_window", label="Devices", width=960, height=480):
+        dpg.add_text("Device Monitor", tag="__title")
+        dpg.add_text("Ready", tag="__status")
+        dpg.add_separator()
+        with dpg.table(tag="__devices_table", header_row=True, resizable=True, borders_innerH=True, borders_innerV=True, borders_outerH=True, borders_outerV=True):
+            dpg.add_table_column(label="STT", width_fixed=True, init_width_or_weight=50)
+            dpg.add_table_column(label="serial", width_fixed=True, init_width_or_weight=180)
+            dpg.add_table_column(label="isRunning", width_fixed=True, init_width_or_weight=90)
+            dpg.add_table_column(label="log")
+            dpg.add_table_column(label="action", width_fixed=True, init_width_or_weight=140)
+
+    dpg.set_primary_window("__main_window", True)
+    dpg.show_viewport()
+
+    threading.Thread(target=snapshot_loop, daemon=True).start()
+
+    last_refresh = 0.0
+    while dpg.is_dearpygui_running() and not stop_signal.is_set():
+        now = time.time()
+        if now - last_refresh >= 0.5:
+            # Update status line
+            with status_lock:
+                dpg.set_value("__status", status_message["text"])
+
+            # Rebuild table rows
+            table_tag = "__devices_table"
+            children = dpg.get_item_children(table_tag, 1) or []
+            for child in list(children):
+                try:
+                    dpg.delete_item(child)
+                except Exception:
+                    pass
+
+            with snapshot_lock:
+                items = list(snapshot.items())
+            serials = [k for k, _ in items]
+            serials.sort()
+            for idx, serial in enumerate(serials, start=1):
+                info = snapshot.get(serial, {})
+                is_running = bool(info.get("is_running", False))
+                run_text = "RUN" if is_running else "STOP"
+                run_color = (0, 180, 0, 255) if is_running else (220, 40, 40, 255)
+                log_text = str(info.get("log", ""))
+                with dpg.table_row(parent=table_tag):
+                    dpg.add_text(str(idx))
+                    dpg.add_text(serial)
+                    dpg.add_text(run_text, color=run_color)
+                    dpg.add_text(log_text)
+                    dpg.add_button(label="Force stop", callback=on_force_stop, user_data=serial)
+
+            last_refresh = now
+
+        dpg.render_dearpygui_frame()
+
+    dpg.destroy_context()
     return True
 
 
@@ -1071,22 +1175,26 @@ def main() -> None:
     game_sessions: Dict[str, Dict[str, object]] = {}
     game_sessions_lock = threading.Lock()
 
-    ui_started = start_device_ui_monitor(stop_event, interval=UI_REFRESH_SEC)
+    # Prefer GUI. It runs on the main thread.
+    ui_started = False
 
     start_reporter(room_hash, stop_event)
     start_command_fetcher(room_hash, commands, commands_lock, stop_event)
     start_command_printer(commands, commands_lock, stop_event, game_sessions, game_sessions_lock)
     start_status_monitor(stop_event, game_sessions, game_sessions_lock)
-    # Rich UI already manages terminal rendering; avoid clearing console to prevent flicker.
-    if not ui_started:
-        start_console_clearer(stop_event)
-    print("Background threads running. Press Ctrl+C to stop.")
 
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\nStopping...")
+    ui_started = start_device_gui(stop_event, game_sessions, game_sessions_lock, interval=UI_REFRESH_SEC)
+    if not ui_started:
+        # Fallback: no GUI => keep old behavior (no always-on table), just keep process alive.
+        print("Background threads running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            stop_event.set()
+    else:
+        # GUI loop exited
         stop_event.set()
 
 
