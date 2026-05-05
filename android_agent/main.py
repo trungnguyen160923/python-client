@@ -72,10 +72,10 @@ def start_command_printer(commands: List[Dict[str, object]], commands_lock: thre
                 text = str(cmd.get("command_text", ""))
                 room_hash = str(cmd.get("room_hash", ""))
                 command_id = cmd.get("command_id")
-                meta = cmd.get("meta") if "meta" in cmd else None
+                meta = cmd.get("meta") if "meta" in cmd else Nones
                 if not serial or not text:
                     continue
-                if ("nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text and "runPlayGame" in text):
+                if ("nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text and  ("runPlayGame" in text or "run" in text)):
                     print(f"[CLASSIFY] Start Game: serial={serial} cmd={text}")
                     start_batch.append({"serial": serial, "command_text": text, "room_hash": room_hash, "command_id": command_id, "meta": meta})
                 elif "force-stop nat.myc.test" in text:

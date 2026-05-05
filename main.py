@@ -1001,7 +1001,7 @@ def start_command_printer(
                     continue
                 if (
                     "nat.myc.test/androidx.test.runner.AndroidJUnitRunner" in text
-                    and "runPlayGame" in text
+                    and ("runPlayGame" in text or "run" in text)
                 ):
                     print(f"[CLASSIFY] Start Game: serial={serial} cmd={text}")
                     start_batch.append(
